@@ -24,18 +24,26 @@ export const INITIAL_STATE = {
     //     endLine: 2,
     //     lineCount: 2,
     //     letterCount: 41,
-    //     isValid: true // 100-500 letters
+    //     isValid: true // 50-1000 letters
     //   }
     // ]
 
-    // NEW: Boundary array for segmentation
+    // Boundary array for segmentation
     boundaries: [], // Array of line indices [0, 5, 10, 15, ..., totalLines]
     // Example: [0, 2, 4, 6, 8, 10] for 2-line pairs
     // First boundary is always 0, last is always total line count
 
     // Segmentation configuration
-    segmentationMode: 'manual', // 'manual' | '2-line-pairs' | 'by-clause' | 'custom'
+    segmentationMode: 'manual', // 'manual' | 'lines' | 'letters' | 'punctuation' | 'sentences' | 'balanced'
     customSegmentSize: 5, // When mode is 'custom'
+
+    // Segmentation history for undo/redo
+    segmentationHistory: [],
+    segmentationHistoryIndex: -1,
+
+    // Selected segment for operations
+    selectedSegmentId: null,
+    hoveredLineIndex: null,
 
     // Edition comparison mode
     comparisonMode: false,
@@ -53,8 +61,14 @@ export const INITIAL_STATE = {
     // View mode for filtering results
     viewMode: 'basic', // 'basic' | 'standard' | 'advanced' | 'expert'
 
-    // Filter configuration
+    // Filter configuration for analysis
     filters: {
+      spoilageMax: 0.15,
+      entitySearch: [],
+      wordSearch: [],
+      wordExclusions: [],
+      resultsPerSegment: 100,
+      minCompositeScore: 0,
       minConfidence: 0, // 0-100
       methods: [], // Empty = all methods
       entities: [], // Empty = all entities
@@ -108,7 +122,7 @@ export const INITIAL_STATE = {
     sortBy: 'confidence', // 'confidence' | 'entity_score' | 'spoilage' | 'method'
     sortOrder: 'desc', // 'asc' | 'desc'
     
-    // Active filters
+    // Active filters for results view
     filters: {
       minConfidence: 0,
       maxConfidence: 100,
@@ -117,12 +131,23 @@ export const INITIAL_STATE = {
       sortBy: 'confidence',
       sortOrder: 'desc',
     },
+    
+    // Legacy alias
+    activeFilters: {
+      minConfidence: 0,
+      maxConfidence: 100,
+      methods: [],
+      entities: [],
+    },
 
     // Selected patterns (for batch operations)
     selectedPatterns: [], // Array of pattern IDs
 
     // Expanded pattern (showing transformation log)
     expandedPatternId: null,
+
+    // Selected pattern details for modal
+    selectedPatternDetails: null,
 
     // Export state
     isExporting: false,
@@ -143,7 +168,7 @@ export const INITIAL_STATE = {
     //     created: '2025-11-10T14:30:00Z',
     //     source: {...}, // Complete source object
     //     segments: [...],
-    //     boundaries: [...], // NEW: Saved boundaries
+    //     boundaries: [...], // Saved boundaries
     //     resultCount: 412,
     //     highConfidenceCount: 89,
     //     configuration: {...} // Saved analyze config
@@ -175,6 +200,7 @@ export const INITIAL_STATE = {
       help: false,
       progressDetail: false,
       exportOptions: false,
+      patternDetails: false,
     },
 
     // Notification queue
@@ -197,6 +223,14 @@ export const INITIAL_STATE = {
       analysis: false,
       export: false,
     },
+
+    // UI settings for segmentation tool
+    showStats: true,
+    showValidation: true,
+    highlightMode: 'segments', // 'segments' | 'validity' | 'none'
+    fontSize: 'medium', // 'small' | 'medium' | 'large'
+    showLineNumbers: true,
+    compactMode: false,
   },
 
   // ==================== USER SETTINGS ====================
@@ -224,16 +258,16 @@ export const INITIAL_STATE = {
   },
 
   // ==================== ENTITY DICTIONARY (CACHED) ====================
-  entityDictionary: {}, // Loaded from mock API on init
-  // Example: {
-  //   'whitgift': {
+  entityDictionary: [], // Loaded from mock API on init, array format for compatibility
+  // Example: [
+  //   {
   //     id: 1,
   //     name: 'John Whitgift',
-  //     variants: ['Whitgift', 'Whitgifte'],
+  //     name_variants: ['Whitgift', 'Whitgifte'],
   //     type: 'person',
   //     period: 'post_1583',
   //     weight: 1.0,
   //     themes: ['persecution', 'torture']
   //   }
-  // }
+  // ]
 };

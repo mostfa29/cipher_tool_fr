@@ -5,40 +5,8 @@ import { useDebounce } from 'use-debounce';
 import { 
   Scissors, BarChart3, Settings, Maximize2, Minimize2, 
   ZapOff, Trash2, Check, X, ChevronDown, ChevronUp,
-  Split, Combine, Eye, EyeOff, Copy, Download, Upload
+  Split, Combine, Eye, EyeOff, Copy, Download, Upload, ArrowLeft
 } from 'lucide-react';
-
-// Mock data
-const MOCK_TEXT = `The end of physicke is our bodies health:
-Why Faustus hast thou not attain'd that end?
-Is not thy common talke sound Aphorismes?
-Are not thy billes hung vp as monuments,
-Whereby whole Cities haue escapt the plague,
-And thousand desperate maladies beene eas'd?
-Yet art thou still but Faustus, and a man.
-Couldst thou make men to liue eternally,
-Or being dead, raise them to life againe,
-Then this profession were to be esteem'd.
-Physicke farewell, where is Iustinian?
-Si vna eademque res legatur duobus,
-Alter rem, alter valorem rei, etc.
-A petty case of paltry Legacies:
-Exhereditare filium non potest pater nisi, etc.
-Such is the subiect of the Institute,
-And vniuersall body of the Law:
-This study fits a mercenary drudge,
-Who aimes at nothing but externall trash;
-Too seruile and illiberall for mee.
-When all is done, Diuinity is best.
-Ierome's Bible Faustus, view it well:
-Stipendium peccati mors est: ha, Stipendium, etc.
-The reward of sinne is death: that's hard.
-Si peccasse negamus, fallimur, et nulla est in nobis veritas.
-If we say that we have no sinne,
-We deceiue our selues, and there's no truth in vs.
-Why then belike we must sinne,
-And so consequently die.
-I, we must die an euerlasting death.`;
 
 // Segmentation algorithms
 const SegmentationEngine = {
@@ -109,43 +77,49 @@ const SegmentationEngine = {
   }
 };
 
-// Enhanced Segment class with validation
+// Enhanced Segment class with more lenient validation
 class Segment {
-  constructor(lines, startLine, endLine) {
+  constructor(lines, startLine, endLine, id) {
+    this.id = id;
     this.startLine = startLine;
     this.endLine = endLine;
     this.text = lines.slice(startLine, endLine).join('\n');
     this.letterCount = this.text.replace(/[^a-zA-Z]/g, '').length;
     this.wordCount = this.text.split(/\s+/).filter(Boolean).length;
     this.lineCount = endLine - startLine;
-  }
-
-  get isValid() {
-    return this.letterCount >= 100 && this.letterCount <= 500;
-  }
-
-  get validationStatus() {
-    if (this.letterCount < 100) return 'too-short';
-    if (this.letterCount > 500) return 'too-long';
-    return 'valid';
-  }
-
-  get quality() {
-    const ideal = 300;
+    
+    // Store as regular properties, NOT getters
+    this.isValid = this.letterCount >= 20 && this.letterCount <= 1000;
+    
+    if (this.letterCount < 20) {
+      this.validationStatus = 'too-short';
+    } else if (this.letterCount > 1000) {
+      this.validationStatus = 'too-long';
+    } else {
+      this.validationStatus = 'valid';
+    }
+    
+    const ideal = 100;
     const distance = Math.abs(this.letterCount - ideal);
-    return Math.max(0, 100 - (distance / ideal) * 100);
+    this.quality = Math.max(0, 100 - (distance / ideal) * 100);
   }
 }
 
-const EnhancedSegmentationTool = () => {
+const EnhancedSegmentationTool = ({ 
+  source,
+  boundaries: initialBoundaries = [],
+  onBoundariesChange,
+  onSegmentsChange,
+  onBack 
+}) => {
   // State management with immer for complex nested updates
   const [config, updateConfig] = useImmer({
     mode: 'lines',
     linesPerSegment: 3,
     lettersPerSegment: 250,
     sentencesPerSegment: 2,
-    minLetters: 100,
-    maxLetters: 500,
+    minLetters: 50,
+    maxLetters: 1000,
     autoBalance: false
   });
 
@@ -161,26 +135,68 @@ const EnhancedSegmentationTool = () => {
     editingSegmentId: null
   });
 
-  const [boundaries, setBoundaries] = useState([0, MOCK_TEXT.split('\n').length]);
+  // Text selection state
+  const [selection, setSelection] = useState({
+    isSelecting: false,
+    startLine: null,
+    endLine: null,
+    text: ''
+  });
+
+  // Merge mode state
+  const [mergeMode, setMergeMode] = useState({
+    active: false,
+    selectedSegments: []
+  });
+
+  const virtuosoRef = useRef(null);
+  const textContainerRef = useRef(null);
+  const lines = useMemo(() => source?.text ? source.text.split('\n') : [], [source]);
+
+  
+  // Initialize boundaries from props or create default
+  const [boundaries, setBoundaries] = useState(() => {
+    if (initialBoundaries && initialBoundaries.length > 1) {
+      return initialBoundaries;
+    }
+    // Default: create segments every 3 lines
+    const defaultBoundaries = [0];
+    for (let i = 3; i < lines.length; i += 3) {
+      defaultBoundaries.push(i);
+    }
+    defaultBoundaries.push(lines.length);
+    return defaultBoundaries;
+  });
+
   const [history, setHistory] = useState([]);
   const [historyIndex, setHistoryIndex] = useState(-1);
-  
-  const virtuosoRef = useRef(null);
-  const lines = useMemo(() => MOCK_TEXT.split('\n'), []);
+
+  const validBoundariesSet = useMemo(() => new Set(boundaries), [boundaries]);
+
+  // Sync with external boundary changes
+  useEffect(() => {
+    if (initialBoundaries && initialBoundaries.length > 1) {
+      setBoundaries(initialBoundaries);
+    }
+  }, [initialBoundaries]);
 
   // Debounced config for auto-regeneration
   const [debouncedConfig] = useDebounce(config, 300);
 
   // Generate segments from boundaries
-  const segments = useMemo(() => {
-    if (boundaries.length < 2) return [];
-    
-    return boundaries.slice(0, -1).map((start, i) => {
-      const end = boundaries[i + 1];
-      const segment = new Segment(lines, start, end);
-      return { ...segment, id: i + 1 };
-    });
-  }, [boundaries, lines]);
+// In the segments useMemo
+const segments = useMemo(() => {
+  if (boundaries.length < 2 || lines.length === 0) return [];
+  
+  const segs = boundaries.slice(0, -1).map((start, i) => {
+    const end = boundaries[i + 1];
+    // Pass id directly to constructor instead of spreading
+    return new Segment(lines, start, end, i + 1);
+  });
+  
+  console.log('Total segments:', segs.length, 'Valid:', segs.filter(s => s.isValid).length);
+  return segs;
+}, [boundaries, lines]);
 
   // Statistics
   const stats = useMemo(() => {
@@ -201,6 +217,130 @@ const EnhancedSegmentationTool = () => {
     };
   }, [segments]);
 
+  // Notify parent of segment changes
+  const lastSegmentsHashRef = useRef('');
+
+  // Add this near the top with other state
+  const [debouncedSegments] = useDebounce(segments, 300);
+
+  // Replace the useEffect with this:
+  useEffect(() => {
+    if (debouncedSegments.length > 0 && onSegmentsChange) {
+      onSegmentsChange(debouncedSegments);
+    }
+  }, [debouncedSegments, onSegmentsChange]);
+
+  // Handle text selection
+  const handleTextSelection = useCallback(() => {
+    const sel = window.getSelection();
+    const selectedText = sel.toString();
+    
+    if (!selectedText || selectedText.length === 0) {
+      setSelection({ isSelecting: false, startLine: null, endLine: null, text: '' });
+      return;
+    }
+    
+    // Find which lines are selected
+    const range = sel.getRangeAt(0);
+    
+    // Get line indices from selection
+    const startContainer = range.startContainer.parentElement?.closest('[data-line-index]');
+    const endContainer = range.endContainer.parentElement?.closest('[data-line-index]');
+    
+    if (startContainer && endContainer) {
+      const startLine = parseInt(startContainer.getAttribute('data-line-index'));
+      const endLine = parseInt(endContainer.getAttribute('data-line-index'));
+      
+      setSelection({
+        isSelecting: true,
+        startLine: Math.min(startLine, endLine),
+        endLine: Math.max(startLine, endLine) + 1,
+        text: selectedText
+      });
+    }
+  }, []);
+
+  // Create segment from selection
+  const createSegmentFromSelection = useCallback(() => {
+    if (!selection.isSelecting || selection.startLine === null) return;
+    
+    // Create boundaries at selection start and end
+    const newBoundaries = [...boundaries];
+    
+    if (!newBoundaries.includes(selection.startLine)) {
+      newBoundaries.push(selection.startLine);
+    }
+    if (!newBoundaries.includes(selection.endLine)) {
+      newBoundaries.push(selection.endLine);
+    }
+    
+    newBoundaries.sort((a, b) => a - b);
+    
+    setHistory(prev => [...prev.slice(0, historyIndex + 1), boundaries]);
+    setHistoryIndex(prev => prev + 1);
+    setBoundaries(newBoundaries);
+    
+    if (onBoundariesChange) {
+      onBoundariesChange(newBoundaries);
+    }
+    
+    // Clear selection
+    window.getSelection().removeAllRanges();
+    setSelection({ isSelecting: false, startLine: null, endLine: null, text: '' });
+  }, [selection, boundaries, historyIndex, onBoundariesChange]);
+
+  // Toggle segment for merge
+  const toggleSegmentForMerge = useCallback((segmentId) => {
+    setMergeMode(prev => {
+      const isSelected = prev.selectedSegments.includes(segmentId);
+      return {
+        ...prev,
+        selectedSegments: isSelected
+          ? prev.selectedSegments.filter(id => id !== segmentId)
+          : [...prev.selectedSegments, segmentId].sort((a, b) => a - b)
+      };
+    });
+  }, []);
+
+  // Merge selected segments
+  const mergeSelectedSegments = useCallback(() => {
+    if (mergeMode.selectedSegments.length < 2) return;
+    
+    // Check if segments are consecutive
+    const sortedIds = [...mergeMode.selectedSegments].sort((a, b) => a - b);
+    const areConsecutive = sortedIds.every((id, i) => 
+      i === 0 || id === sortedIds[i - 1] + 1
+    );
+    
+    if (!areConsecutive) {
+      alert('Please select consecutive segments to merge');
+      return;
+    }
+    
+    // Remove boundaries between selected segments
+    const segmentsToMerge = segments.filter(s => 
+      mergeMode.selectedSegments.includes(s.id)
+    );
+    
+    const boundariesToRemove = segmentsToMerge
+      .slice(0, -1)
+      .map(s => s.endLine);
+    
+    const newBoundaries = boundaries.filter(b => 
+      !boundariesToRemove.includes(b)
+    );
+    
+    setHistory(prev => [...prev.slice(0, historyIndex + 1), boundaries]);
+    setHistoryIndex(prev => prev + 1);
+    setBoundaries(newBoundaries);
+    
+    if (onBoundariesChange) {
+      onBoundariesChange(newBoundaries);
+    }
+    
+    setMergeMode({ active: false, selectedSegments: [] });
+  }, [mergeMode, segments, boundaries, historyIndex, onBoundariesChange]);
+
   // Auto-generate segments
   const generateSegments = useCallback(() => {
     let newBoundaries;
@@ -220,30 +360,67 @@ const EnhancedSegmentationTool = () => {
       case 'sentences':
         newBoundaries = SegmentationEngine.bySentences(lines, config.sentencesPerSegment);
         break;
+      case 'manual':
+        // Don't auto-generate in manual mode
+        return;
       default:
         return;
     }
     
-    // Save to history
+    // Ensure we have valid boundaries
+    if (!newBoundaries || newBoundaries.length < 2) {
+      console.error('Invalid boundaries generated:', newBoundaries);
+      return;
+    }
+    
+    // Save to history for undo/redo
     setHistory(prev => [...prev.slice(0, historyIndex + 1), boundaries]);
     setHistoryIndex(prev => prev + 1);
+    
+    // Update local state
     setBoundaries(newBoundaries);
-  }, [config, lines, boundaries, historyIndex]);
+    
+    // Sync with parent component
+    if (onBoundariesChange) {
+      onBoundariesChange(newBoundaries);
+    }
+    
+    // Log results
+    const newSegments = newBoundaries.slice(0, -1).map((start, i) => {
+      const end = newBoundaries[i + 1];
+      const segment = new Segment(lines, start, end);
+      return { ...segment, id: i + 1 };
+    });
+    
+    const validCount = newSegments.filter(s => s.isValid).length;
+    console.log(`Generated ${newSegments.length} segments (${validCount} valid, ${newSegments.length - validCount} invalid)`);
+    
+  }, [config, lines, boundaries, historyIndex, onBoundariesChange]);
 
   // Undo/Redo
   const undo = useCallback(() => {
     if (historyIndex > 0) {
+      const previousBoundaries = history[historyIndex - 1];
       setHistoryIndex(prev => prev - 1);
-      setBoundaries(history[historyIndex - 1]);
+      setBoundaries(previousBoundaries);
+      
+      if (onBoundariesChange) {
+        onBoundariesChange(previousBoundaries);
+      }
     }
-  }, [history, historyIndex]);
+  }, [history, historyIndex, onBoundariesChange]);
 
   const redo = useCallback(() => {
     if (historyIndex < history.length - 1) {
+      const nextBoundaries = history[historyIndex + 1];
       setHistoryIndex(prev => prev + 1);
-      setBoundaries(history[historyIndex + 1]);
+      setBoundaries(nextBoundaries);
+      
+      if (onBoundariesChange) {
+        onBoundariesChange(nextBoundaries);
+      }
     }
-  }, [history, historyIndex]);
+  }, [history, historyIndex, onBoundariesChange]);
 
   // Manual boundary operations
   const toggleBoundary = useCallback((lineIndex) => {
@@ -261,7 +438,11 @@ const EnhancedSegmentationTool = () => {
     setHistory(prev => [...prev.slice(0, historyIndex + 1), boundaries]);
     setHistoryIndex(prev => prev + 1);
     setBoundaries(newBoundaries);
-  }, [boundaries, historyIndex]);
+    
+    if (onBoundariesChange) {
+      onBoundariesChange(newBoundaries);
+    }
+  }, [boundaries, historyIndex, onBoundariesChange]);
 
   const splitSegment = useCallback((segmentId, lineIndex) => {
     const segment = segments.find(s => s.id === segmentId);
@@ -271,7 +452,11 @@ const EnhancedSegmentationTool = () => {
     setHistory(prev => [...prev.slice(0, historyIndex + 1), boundaries]);
     setHistoryIndex(prev => prev + 1);
     setBoundaries(newBoundaries);
-  }, [segments, boundaries, historyIndex]);
+    
+    if (onBoundariesChange) {
+      onBoundariesChange(newBoundaries);
+    }
+  }, [segments, boundaries, historyIndex, onBoundariesChange]);
 
   const mergeSegments = useCallback((segmentId) => {
     const segment = segments.find(s => s.id === segmentId);
@@ -281,7 +466,11 @@ const EnhancedSegmentationTool = () => {
     setHistory(prev => [...prev.slice(0, historyIndex + 1), boundaries]);
     setHistoryIndex(prev => prev + 1);
     setBoundaries(newBoundaries);
-  }, [segments, boundaries, historyIndex]);
+    
+    if (onBoundariesChange) {
+      onBoundariesChange(newBoundaries);
+    }
+  }, [segments, boundaries, historyIndex, onBoundariesChange]);
 
   const deleteSegment = useCallback((segmentId) => {
     const segment = segments.find(s => s.id === segmentId);
@@ -292,7 +481,11 @@ const EnhancedSegmentationTool = () => {
     setHistoryIndex(prev => prev + 1);
     setBoundaries(newBoundaries);
     updateUI(draft => { draft.selectedSegmentId = null; });
-  }, [segments, boundaries, historyIndex, updateUI]);
+    
+    if (onBoundariesChange) {
+      onBoundariesChange(newBoundaries);
+    }
+  }, [segments, boundaries, historyIndex, updateUI, onBoundariesChange]);
 
   // Get segment for line
   const getSegmentForLine = useCallback((lineIndex) => {
@@ -348,10 +541,10 @@ const EnhancedSegmentationTool = () => {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = 'segments.json';
+    a.download = `segments-${source?.id || 'export'}.json`;
     a.click();
     URL.revokeObjectURL(url);
-  }, [segments, boundaries, config, stats]);
+  }, [segments, boundaries, config, stats, source]);
 
   // Scroll to segment
   const scrollToSegment = useCallback((segmentId) => {
@@ -373,23 +566,42 @@ const EnhancedSegmentationTool = () => {
     const isFirstInSegment = segment && index === segment.startLine;
     const isLastInSegment = segment && index === segment.endLine - 1;
     const isSelected = segment && segment.id === ui.selectedSegmentId;
-    const hasBoundaryAfter = boundaries.includes(index + 1);
+    const isSelectedForMerge = segment && mergeMode.selectedSegments.includes(segment.id);
+    const hasBoundaryAfter = validBoundariesSet.has(index + 1);
+    const isInSelection = selection.isSelecting && index >= selection.startLine && index < selection.endLine;
 
     return (
       <div className="w-full">
         {/* Segment Header */}
         {isFirstInSegment && !ui.compactMode && (
           <div 
-            onClick={() => updateUI(draft => { 
-              draft.selectedSegmentId = isSelected ? null : segment.id;
-            })}
+            onClick={() => {
+              if (mergeMode.active) {
+                toggleSegmentForMerge(segment.id);
+              } else {
+                updateUI(draft => { 
+                  draft.selectedSegmentId = isSelected ? null : segment.id;
+                });
+              }
+            }}
             className={`cursor-pointer border-l-4 px-3 py-2 mb-1 rounded flex items-center justify-between group hover:shadow-sm transition-all ${
               segment.isValid ? 'border-green-500' : 'border-red-500'
             } ${getSegmentColor(segment)} ${
               isSelected ? 'ring-2 ring-blue-400' : ''
+            } ${
+              isSelectedForMerge ? 'ring-2 ring-purple-500' : ''
             }`}
           >
             <div className="flex items-center gap-2 flex-wrap">
+              {mergeMode.active && (
+                <input
+                  type="checkbox"
+                  checked={isSelectedForMerge}
+                  onChange={() => toggleSegmentForMerge(segment.id)}
+                  className="w-4 h-4"
+                  onClick={(e) => e.stopPropagation()}
+                />
+              )}
               <span className="text-xs font-bold text-gray-700">
                 Seg {segment.id}
               </span>
@@ -412,39 +624,44 @@ const EnhancedSegmentationTool = () => {
               )}
             </div>
             
-            <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  mergeSegments(segment.id);
-                }}
-                disabled={segment.id === segments.length}
-                className="p-1 hover:bg-white rounded disabled:opacity-30 disabled:cursor-not-allowed"
-                title="Merge with next"
-              >
-                <div className="w-3 h-3 text-blue-600" > 🔗 </div>
-              </button>
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  deleteSegment(segment.id);
-                }}
-                className="p-1 hover:bg-red-100 rounded"
-                title="Delete segment"
-              >
-                <Trash2 className="w-3 h-3 text-red-600" />
-              </button>
-            </div>
+            {!mergeMode.active && (
+              <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    mergeSegments(segment.id);
+                  }}
+                  disabled={segment.id === segments.length}
+                  className="p-1 hover:bg-white rounded disabled:opacity-30 disabled:cursor-not-allowed"
+                  title="Merge with next"
+                >
+                  <Combine className="w-3 h-3 text-blue-600" />
+                </button>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    deleteSegment(segment.id);
+                  }}
+                  className="p-1 hover:bg-red-100 rounded"
+                  title="Delete segment"
+                >
+                  <Trash2 className="w-3 h-3 text-red-600" />
+                </button>
+              </div>
+            )}
           </div>
         )}
 
         {/* Line Content */}
         <div
+          data-line-index={index}
           className={`flex gap-2 px-3 py-0.5 relative group/line ${
             segment ? getSegmentColor(segment) : ''
-          } ${isSelected ? 'ring-1 ring-blue-300 ring-inset' : ''}`}
+          } ${isSelected ? 'ring-1 ring-blue-300 ring-inset' : ''}
+          ${isInSelection ? 'bg-yellow-200 ring-2 ring-yellow-400' : ''}`}
           onMouseEnter={() => updateUI(draft => { draft.hoveredLineIndex = index; })}
           onMouseLeave={() => updateUI(draft => { draft.hoveredLineIndex = null; })}
+          onMouseUp={handleTextSelection}
         >
           {ui.showLineNumbers && (
             <span className="flex-shrink-0 w-10 text-right text-xs text-gray-400 select-none">
@@ -459,7 +676,7 @@ const EnhancedSegmentationTool = () => {
           </div>
           
           {/* Split button on hover */}
-          {isSelected && ui.hoveredLineIndex === index && !isFirstInSegment && !isLastInSegment && (
+          {isSelected && ui.hoveredLineIndex === index && !isFirstInSegment && !isLastInSegment && !mergeMode.active && (
             <button
               onClick={() => splitSegment(segment.id, index + 1)}
               className="px-2 py-0.5 bg-yellow-500 text-white text-xs rounded hover:bg-yellow-600 transition-colors opacity-0 group-hover/line:opacity-100"
@@ -472,36 +689,64 @@ const EnhancedSegmentationTool = () => {
         </div>
 
         {/* Boundary Control */}
-        <div
-          className={`relative h-4 group/boundary cursor-pointer ${
-            ui.hoveredLineIndex === index ? 'bg-blue-50' : 'hover:bg-gray-50'
-          }`}
-          onClick={() => toggleBoundary(index + 1)}
-        >
-          {hasBoundaryAfter ? (
-            <div className="absolute inset-x-0 top-1/2 transform -translate-y-1/2 flex items-center justify-center">
-              <div className="flex-1 border-t-2 border-dashed border-blue-400"></div>
-              <button className="px-2 py-0.5 bg-blue-500 text-white text-xs font-medium rounded hover:bg-blue-600 transition-colors">
-                ✕ Remove
-              </button>
-              <div className="flex-1 border-t-2 border-dashed border-blue-400"></div>
-            </div>
-          ) : index < lines.length - 1 && (
-            <div className="absolute inset-x-0 top-1/2 transform -translate-y-1/2 flex items-center justify-center opacity-0 group-hover/boundary:opacity-100 transition-opacity">
-              <div className="flex-1 border-t border-dashed border-gray-300"></div>
-              <button className="px-2 py-0.5 bg-gray-200 text-gray-700 text-xs font-medium rounded hover:bg-gray-300 transition-colors">
-                + Add
-              </button>
-              <div className="flex-1 border-t border-dashed border-gray-300"></div>
-            </div>
+        {!mergeMode.active && (
+          <div
+            className={`relative h-4 group/boundary cursor-pointer ${
+              ui.hoveredLineIndex === index ? 'bg-blue-50' : 'hover:bg-gray-50'
+            }`}
+            onClick={() => toggleBoundary(index + 1)}
+          >
+            {hasBoundaryAfter ? (
+              <div className="absolute inset-x-0 top-1/2 transform -translate-y-1/2 flex items-center justify-center">
+                <div className="flex-1 border-t-2 border-dashed border-blue-400"></div>
+                <button className="px-2 py-0.5 bg-blue-500 text-white text-xs font-medium rounded hover:bg-blue-600 transition-colors">
+                  ✕ Remove
+                </button>
+                <div className="flex-1 border-t-2 border-dashed border-blue-400"></div>
+              </div>
+            ) : index < lines.length - 1 && (
+              <div className="absolute inset-x-0 top-1/2 transform -translate-y-1/2 flex items-center justify-center opacity-0 group-hover/boundary:opacity-100 transition-opacity">
+                <div className="flex-1 border-t border-dashed border-gray-300"></div>
+                <button className="px-2 py-0.5 bg-gray-200 text-gray-700 text-xs font-medium rounded hover:bg-gray-300 transition-colors">
+                  + Add
+                </button>
+                <div className="flex-1 border-t border-dashed border-gray-300"></div>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    );
+  }, [
+    lines, boundaries, segments, ui, selection, mergeMode, getSegmentForLine, getSegmentColor,
+    toggleBoundary, splitSegment, mergeSegments, deleteSegment, updateUI, handleTextSelection,
+    toggleSegmentForMerge
+  ]);
+
+  // Initialize with auto-generation on mount if no boundaries
+  // useEffect(() => {
+  //   if (boundaries.length <= 2 && lines.length > 0) {
+  //     generateSegments();
+  //   }
+  // }, []); // Run once on mount
+
+  if (!source) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center">
+          <p className="text-gray-600">No source loaded</p>
+          {onBack && (
+            <button
+              onClick={onBack}
+              className="mt-4 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+            >
+              Go Back
+            </button>
           )}
         </div>
       </div>
     );
-  }, [
-    lines, boundaries, segments, ui, getSegmentForLine, getSegmentColor,
-    toggleBoundary, splitSegment, mergeSegments, deleteSegment, updateUI
-  ]);
+  }
 
   return (
     <div className="min-h-screen bg-gray-50 p-4">
@@ -510,16 +755,29 @@ const EnhancedSegmentationTool = () => {
         {/* Header */}
         <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
           <div className="flex items-center justify-between">
-            <div>
-              <h1 className="text-2xl font-bold text-gray-900">Advanced Text Segmentation</h1>
-              <p className="text-sm text-gray-600 mt-1">Automated + Manual segmentation with real-time validation</p>
+            <div className="flex items-center gap-3">
+              {onBack && (
+                <button
+                  onClick={onBack}
+                  className="p-2 text-gray-600 hover:bg-gray-100 rounded transition-colors"
+                  title="Back to split view"
+                >
+                  <ArrowLeft className="w-5 h-5" />
+                </button>
+              )}
+              <div>
+                <h1 className="text-2xl font-bold text-gray-900">Advanced Text Segmentation</h1>
+                <p className="text-sm text-gray-600 mt-1">
+                  Editing: {source.title} • Automated + Manual segmentation with real-time validation
+                </p>
+              </div>
             </div>
             <div className="flex items-center gap-2">
               <button
                 onClick={undo}
                 disabled={historyIndex <= 0}
                 className="p-2 text-gray-600 hover:bg-gray-100 rounded disabled:opacity-30 disabled:cursor-not-allowed"
-                title="Undo"
+                title="Undo (Ctrl+Z)"
               >
                 ↶
               </button>
@@ -527,7 +785,7 @@ const EnhancedSegmentationTool = () => {
                 onClick={redo}
                 disabled={historyIndex >= history.length - 1}
                 className="p-2 text-gray-600 hover:bg-gray-100 rounded disabled:opacity-30 disabled:cursor-not-allowed"
-                title="Redo"
+                title="Redo (Ctrl+Y)"
               >
                 ↷
               </button>
@@ -535,7 +793,7 @@ const EnhancedSegmentationTool = () => {
                 onClick={exportSegments}
                 disabled={segments.length === 0}
                 className="p-2 text-gray-600 hover:bg-gray-100 rounded disabled:opacity-30 disabled:cursor-not-allowed"
-                title="Export"
+                title="Export segments"
               >
                 <Download className="w-4 h-4" />
               </button>
@@ -547,6 +805,91 @@ const EnhancedSegmentationTool = () => {
           
           {/* Control Panel */}
           <div className="lg:col-span-1 space-y-4">
+            
+            {/* Text Selection Panel */}
+            {selection.isSelecting && (
+              <div className="bg-yellow-50 rounded-lg border-2 border-yellow-400 p-4 animate-pulse">
+                <h3 className="text-sm font-semibold text-yellow-900 mb-2 flex items-center gap-2">
+                  <Scissors className="w-4 h-4" />
+                  Selection Active
+                </h3>
+                <p className="text-xs text-yellow-800 mb-3">
+                  Lines {selection.startLine + 1} - {selection.endLine}
+                  <br />
+                  {selection.text.length} characters selected
+                </p>
+                <div className="flex gap-2">
+                  <button
+                    onClick={createSegmentFromSelection}
+                    className="flex-1 px-3 py-2 bg-yellow-500 text-white text-sm font-medium rounded hover:bg-yellow-600 transition-colors"
+                  >
+                    Create Segment
+                  </button>
+                  <button
+                    onClick={() => {
+                      window.getSelection().removeAllRanges();
+                      setSelection({ isSelecting: false, startLine: null, endLine: null, text: '' });
+                    }}
+                    className="px-3 py-2 bg-gray-200 text-gray-700 text-sm font-medium rounded hover:bg-gray-300 transition-colors"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            )}
+            
+            {/* Merge Mode Panel */}
+            <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="text-sm font-semibold text-gray-900 flex items-center gap-2">
+                  <Combine className="w-4 h-4" />
+                  Merge Mode
+                </h3>
+                <button
+                  onClick={() => setMergeMode({ active: !mergeMode.active, selectedSegments: [] })}
+                  className={`px-3 py-1 text-xs rounded transition-colors ${
+                    mergeMode.active 
+                      ? 'bg-purple-500 text-white hover:bg-purple-600' 
+                      : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                  }`}
+                >
+                  {mergeMode.active ? 'Exit' : 'Enter'}
+                </button>
+              </div>
+              
+              {mergeMode.active && (
+                <>
+                  <p className="text-xs text-gray-600 mb-3">
+                    Click segments to select them for merging
+                  </p>
+                  {mergeMode.selectedSegments.length > 0 && (
+                    <div className="mb-3 p-2 bg-purple-50 rounded">
+                      <p className="text-xs text-gray-700 mb-2 font-medium">
+                        Selected: {mergeMode.selectedSegments.join(', ')}
+                      </p>
+                      <button
+                        onClick={mergeSelectedSegments}
+                        disabled={mergeMode.selectedSegments.length < 2}
+                        className="w-full px-3 py-2 bg-purple-500 text-white text-sm rounded hover:bg-purple-600 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
+                      >
+                        Merge {mergeMode.selectedSegments.length} Segments
+                      </button>
+                    </div>
+                  )}
+                  {mergeMode.selectedSegments.length === 0 && (
+                    <p className="text-xs text-gray-500 italic">
+                      No segments selected yet
+                    </p>
+                  )}
+                </>
+              )}
+              
+              {!mergeMode.active && (
+                <p className="text-xs text-gray-500">
+                  Enable to select and merge multiple segments
+                </p>
+              )}
+            </div>
             
             {/* Mode Selection */}
             <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
@@ -641,8 +984,12 @@ const EnhancedSegmentationTool = () => {
               {segments.length > 0 && (
                 <button
                   onClick={() => {
-                    setBoundaries([0, lines.length]);
+                    const newBoundaries = [0, lines.length];
+                    setBoundaries(newBoundaries);
                     updateUI(draft => { draft.selectedSegmentId = null; });
+                    if (onBoundariesChange) {
+                      onBoundariesChange(newBoundaries);
+                    }
                   }}
                   className="w-full mt-2 px-4 py-2 bg-red-100 text-red-700 text-sm font-medium rounded-lg hover:bg-red-200 transition-colors"
                 >
@@ -715,180 +1062,212 @@ const EnhancedSegmentationTool = () => {
               </h3>
               
               <div className="space-y-2">
-<label className="flex items-center gap-2 text-xs cursor-pointer">
-<input
-type="checkbox"
-checked={ui.showLineNumbers}
-onChange={(e) => updateUI(draft => {
-draft.showLineNumbers = e.target.checked;
-})}
-className="w-4 h-4"
-/>
-Show line numbers
-</label>            <label className="flex items-center gap-2 text-xs cursor-pointer">
-              <input
-                type="checkbox"
-                checked={ui.showValidation}
-                onChange={(e) => updateUI(draft => { 
-                  draft.showValidation = e.target.checked; 
-                })}
-                className="w-4 h-4"
-              />
-              Show validation
-            </label>            <label className="flex items-center gap-2 text-xs cursor-pointer">
-              <input
-                type="checkbox"
-                checked={ui.compactMode}
-                onChange={(e) => updateUI(draft => { 
-                  draft.compactMode = e.target.checked; 
-                })}
-                className="w-4 h-4"
-              />
-              Compact mode
-            </label>            <div className="pt-2 border-t border-gray-200">
-              <label className="text-xs text-gray-600 block mb-2">Highlight Mode</label>
-              <select
-                value={ui.highlightMode}
-                onChange={(e) => updateUI(draft => { 
-                  draft.highlightMode = e.target.value; 
-                })}
-                className="w-full px-2 py-1 text-xs border border-gray-300 rounded"
-              >
-                <option value="segments">By Segment</option>
-                <option value="validity">By Validity</option>
-                <option value="none">None</option>
-              </select>
-            </div>            <div className="pt-2 border-t border-gray-200">
-              <label className="text-xs text-gray-600 block mb-2">Font Size</label>
-              <select
-                value={ui.fontSize}
-                onChange={(e) => updateUI(draft => { 
-                  draft.fontSize = e.target.value; 
-                })}
-                className="w-full px-2 py-1 text-xs border border-gray-300 rounded"
-              >
-                <option value="small">Small</option>
-                <option value="medium">Medium</option>
-                <option value="large">Large</option>
-              </select>
-            </div>
-          </div>
-        </div>        {/* Segment Navigator */}
-        {segments.length > 0 && (
-          <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4 max-h-64 overflow-y-auto">
-            <h3 className="text-sm font-semibold text-gray-900 mb-3">
-              Segment Navigator
-            </h3>
-            <div className="space-y-1">
-              {segments.map(segment => (
-                <button
-                  key={segment.id}
-                  onClick={() => scrollToSegment(segment.id)}
-                  className={`w-full text-left px-2 py-1.5 rounded text-xs transition-colors ${
-                    ui.selectedSegmentId === segment.id
-                      ? 'bg-blue-100 text-blue-700 font-medium'
-                      : 'hover:bg-gray-100 text-gray-700'
-                  }`}
-                >
-                  <div className="flex items-center justify-between">
-                    <span>Seg {segment.id}</span>
-                    <span className={`px-1.5 py-0.5 rounded ${
-                      segment.isValid 
-                        ? 'bg-green-100 text-green-700' 
-                        : 'bg-red-100 text-red-700'
-                    }`}>
-                      {segment.letterCount}L
-                    </span>
-                  </div>
-                </button>
-              ))}
-            </div>
-          </div>
-        )}        {/* Tips */}
-        <div className="bg-blue-50 rounded-lg border border-blue-200 p-4">
-          <h3 className="text-sm font-semibold text-blue-900 mb-2">💡 Quick Tips</h3>
-          <ul className="text-xs text-blue-800 space-y-1">
-            <li>• Click segment header to select</li>
-            <li>• Hover between lines to add/remove boundaries</li>
-            <li>• Use ✂️ Split on selected segments</li>
-            <li>• Use 🔗 Merge to combine segments</li>
-            <li>• Valid range: 100-500 letters</li>
-            <li>• Use Ctrl+Z / Ctrl+Y for undo/redo</li>
-          </ul>
-        </div>
-      </div>      {/* Text Display */}
-      <div className="lg:col-span-3">
-        <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden flex flex-col" style={{ height: 'calc(100vh - 200px)' }}>          {/* Text Header */}
-          <div className="px-4 py-3 border-b border-gray-200 bg-gray-50 flex-shrink-0">
-            <div className="flex items-center justify-between">
-              <div>
-                <h3 className="text-sm font-semibold text-gray-900">Doctor Faustus A-text</h3>
-                <p className="text-xs text-gray-600 mt-1">Christopher Marlowe • 1604 • {lines.length} lines</p>
+                <label className="flex items-center gap-2 text-xs cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={ui.showLineNumbers}
+                    onChange={(e) => updateUI(draft => {
+                      draft.showLineNumbers = e.target.checked;
+                    })}
+                    className="w-4 h-4"
+                  />
+                  Show line numbers
+                </label>
+                
+                <label className="flex items-center gap-2 text-xs cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={ui.showValidation}
+                    onChange={(e) => updateUI(draft => { 
+                      draft.showValidation = e.target.checked; 
+                    })}
+                    className="w-4 h-4"
+                  />
+                  Show validation
+                </label>
+                
+                <label className="flex items-center gap-2 text-xs cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={ui.compactMode}
+                    onChange={(e) => updateUI(draft => { 
+                      draft.compactMode = e.target.checked; 
+                    })}
+                    className="w-4 h-4"
+                  />
+                  Compact mode
+                </label>
+                
+                <div className="pt-2 border-t border-gray-200">
+                  <label className="text-xs text-gray-600 block mb-2">Highlight Mode</label>
+                  <select
+                    value={ui.highlightMode}
+                    onChange={(e) => updateUI(draft => { 
+                      draft.highlightMode = e.target.value; 
+                    })}
+                    className="w-full px-2 py-1 text-xs border border-gray-300 rounded"
+                  >
+                    <option value="segments">By Segment</option>
+                    <option value="validity">By Validity</option>
+                    <option value="none">None</option>
+                  </select>
+                </div>
+                
+                <div className="pt-2 border-t border-gray-200">
+                  <label className="text-xs text-gray-600 block mb-2">Font Size</label>
+                  <select
+                    value={ui.fontSize}
+                    onChange={(e) => updateUI(draft => { 
+                      draft.fontSize = e.target.value; 
+                    })}
+                    className="w-full px-2 py-1 text-xs border border-gray-300 rounded"
+                  >
+                    <option value="small">Small</option>
+                    <option value="medium">Medium</option>
+                    <option value="large">Large</option>
+                  </select>
+                </div>
               </div>
-              {segments.length > 0 && (
-                <div className="flex items-center gap-2">
-                  <span className="text-xs px-2 py-1 bg-blue-100 text-blue-700 rounded">
-                    {segments.length} segments
-                  </span>
-                  <span className="text-xs px-2 py-1 bg-green-100 text-green-700 rounded">
-                    {stats.valid} valid
-                  </span>
-                  {stats.invalid > 0 && (
-                    <span className="text-xs px-2 py-1 bg-red-100 text-red-700 rounded">
-                      {stats.invalid} invalid
-                    </span>
+            </div>
+            
+            {/* Segment Navigator */}
+            {segments.length > 0 && (
+              <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4 max-h-64 overflow-y-auto">
+                <h3 className="text-sm font-semibold text-gray-900 mb-3">
+                  Segment Navigator
+                </h3>
+                <div className="space-y-1">
+                  {segments.map(segment => (
+                    <button
+                      key={segment.id}
+                      onClick={() => scrollToSegment(segment.id)}
+                      className={`w-full text-left px-2 py-1.5 rounded text-xs transition-colors ${
+                        ui.selectedSegmentId === segment.id
+                          ? 'bg-blue-100 text-blue-700 font-medium'
+                          : 'hover:bg-gray-100 text-gray-700'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between">
+                        <span>Seg {segment.id}</span>
+                        <span className={`px-1.5 py-0.5 rounded ${
+                          segment.isValid 
+                            ? 'bg-green-100 text-green-700' 
+                            : 'bg-red-100 text-red-700'
+                        }`}>
+                          {segment.letterCount}L
+                        </span>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+            
+            {/* Tips */}
+            <div className="bg-blue-50 rounded-lg border border-blue-200 p-4">
+              <h3 className="text-sm font-semibold text-blue-900 mb-2">💡 Quick Tips</h3>
+              <ul className="text-xs text-blue-800 space-y-1">
+                <li>• Select text with cursor to create segments</li>
+                <li>• Use Merge Mode to combine segments</li>
+                <li>• Click segment header to select</li>
+                <li>• Hover between lines to add/remove boundaries</li>
+                <li>• Use ✂️ Split on selected segments</li>
+                <li>• Valid range: 50-1000 letters</li>
+                <li>• Use Ctrl+Z / Ctrl+Y for undo/redo</li>
+              </ul>
+            </div>
+          </div>
+          
+          {/* Text Display */}
+          <div className="lg:col-span-3">
+            <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden flex flex-col" style={{ height: 'calc(100vh - 200px)' }}>
+              
+              {/* Text Header */}
+              <div className="px-4 py-3 border-b border-gray-200 bg-gray-50 flex-shrink-0">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h3 className="text-sm font-semibold text-gray-900">{source.title}</h3>
+                    <p className="text-xs text-gray-600 mt-1">
+                      {source.author && `${source.author} • `}
+                      {source.year && `${source.year} • `}
+                      {lines.length} lines
+                    </p>
+                  </div>
+                  {segments.length > 0 && (
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs px-2 py-1 bg-blue-100 text-blue-700 rounded">
+                        {segments.length} segments
+                      </span>
+                      <span className="text-xs px-2 py-1 bg-green-100 text-green-700 rounded">
+                        {stats.valid} valid
+                      </span>
+                      {stats.invalid > 0 && (
+                        <span className="text-xs px-2 py-1 bg-red-100 text-red-700 rounded">
+                          {stats.invalid} invalid
+                        </span>
+                      )}
+                    </div>
                   )}
+                </div>
+              </div>
+              
+              {/* Virtualized Content */}
+              <div className="flex-1 overflow-hidden">
+                {segments.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center h-full text-center p-8">
+                    <ZapOff className="w-16 h-16 text-gray-300 mb-4" />
+                    <p className="text-gray-500 text-sm mb-2">No segments generated yet</p>
+                    <p className="text-gray-400 text-xs">Select a mode and click "Generate Segments" to begin</p>
+                  </div>
+                ) : (
+                  <Virtuoso
+                    ref={virtuosoRef}
+                    totalCount={lines.length}
+                    itemContent={rowContent}
+                    style={{ height: '100%' }}
+                    overscan={20}
+                  />
+                )}
+              </div>
+              
+              {/* Footer */}
+              {segments.length > 0 && (
+                <div className="px-4 py-2 border-t border-gray-200 bg-gray-50 flex-shrink-0">
+                  <div className="flex items-center justify-between text-xs text-gray-600">
+                    <div className="flex items-center gap-4">
+                      <span>
+                        {lines.length} lines • {stats.totalLetters} letters
+                      </span>
+                      {ui.selectedSegmentId && (
+                        <span className="text-blue-600 font-medium">
+                          Segment {ui.selectedSegmentId} selected
+                        </span>
+                      )}
+                      {mergeMode.active && (
+                        <span className="text-purple-600 font-medium">
+                          Merge mode active
+                        </span>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className={`px-2 py-1 rounded ${
+                        stats.valid === stats.total 
+                          ? 'bg-green-100 text-green-700' 
+                          : 'bg-yellow-100 text-yellow-700'
+                      }`}>
+                        {Math.round((stats.valid / stats.total) * 100)}% valid
+                      </span>
+                      <span>Avg quality: {stats.avgQuality}%</span>
+                    </div>
+                  </div>
                 </div>
               )}
             </div>
-          </div>          {/* Virtualized Content */}
-          <div className="flex-1 overflow-hidden">
-            {segments.length === 0 ? (
-              <div className="flex flex-col items-center justify-center h-full text-center p-8">
-                <ZapOff className="w-16 h-16 text-gray-300 mb-4" />
-                <p className="text-gray-500 text-sm mb-2">No segments generated yet</p>
-                <p className="text-gray-400 text-xs">Select a mode and click "Generate Segments" to begin</p>
-              </div>
-            ) : (
-              <Virtuoso
-                ref={virtuosoRef}
-                totalCount={lines.length}
-                itemContent={rowContent}
-                style={{ height: '100%' }}
-                overscan={20}
-              />
-            )}
-          </div>          {/* Footer */}
-          {segments.length > 0 && (
-            <div className="px-4 py-2 border-t border-gray-200 bg-gray-50 flex-shrink-0">
-              <div className="flex items-center justify-between text-xs text-gray-600">
-                <div className="flex items-center gap-4">
-                  <span>
-                    {lines.length} lines • {stats.totalLetters} letters
-                  </span>
-                  {ui.selectedSegmentId && (
-                    <span className="text-blue-600 font-medium">
-                      Segment {ui.selectedSegmentId} selected
-                    </span>
-                  )}
-                </div>
-                <div className="flex items-center gap-2">
-                  <span className={`px-2 py-1 rounded ${
-                    stats.valid === stats.total 
-                      ? 'bg-green-100 text-green-700' 
-                      : 'bg-yellow-100 text-yellow-700'
-                  }`}>
-                    {Math.round((stats.valid / stats.total) * 100)}% valid
-                  </span>
-                  <span>Avg quality: {stats.avgQuality}%</span>
-                </div>
-              </div>
-            </div>
-          )}
+          </div>
         </div>
       </div>
     </div>
-  </div>
-</div>
-);
-};export default EnhancedSegmentationTool;
+  );
+};
+
+export default EnhancedSegmentationTool;

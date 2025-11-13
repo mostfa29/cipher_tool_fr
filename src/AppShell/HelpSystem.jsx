@@ -1,5 +1,3 @@
-// components/HelpSystem.jsx
-
 import React, { useState, useEffect } from 'react';
 import PropTypes from 'prop-types';
 
@@ -8,19 +6,16 @@ const HelpSystem = ({ isOpen, onClose }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState([]);
 
-  // Handle escape key
   useEffect(() => {
     const handleEscape = (e) => {
       if (e.key === 'Escape' && isOpen) {
         onClose();
       }
     };
-
     window.addEventListener('keydown', handleEscape);
     return () => window.removeEventListener('keydown', handleEscape);
   }, [isOpen, onClose]);
 
-  // Search functionality
   useEffect(() => {
     if (searchQuery.trim()) {
       const results = searchContent(searchQuery);
@@ -65,14 +60,12 @@ const HelpSystem = ({ isOpen, onClose }) => {
 
   return (
     <>
-      {/* Backdrop */}
       <div
         className="fixed inset-0 bg-black bg-opacity-50 z-40 transition-opacity"
         onClick={onClose}
         aria-hidden="true"
       />
 
-      {/* Modal */}
       <div
         className="fixed inset-0 z-50 flex items-center justify-center p-4"
         role="dialog"
@@ -83,7 +76,6 @@ const HelpSystem = ({ isOpen, onClose }) => {
           className="bg-white rounded-lg shadow-xl max-w-5xl w-full max-h-[90vh] overflow-hidden flex flex-col"
           onClick={(e) => e.stopPropagation()}
         >
-          {/* Header */}
           <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
             <div className="flex items-center gap-3">
               <svg
@@ -119,7 +111,6 @@ const HelpSystem = ({ isOpen, onClose }) => {
             </button>
           </div>
 
-          {/* Search Bar */}
           <div className="px-6 py-4 border-b border-gray-200 bg-gray-50">
             <div className="relative">
               <input
@@ -143,7 +134,6 @@ const HelpSystem = ({ isOpen, onClose }) => {
                 />
               </svg>
 
-              {/* Search Results Dropdown */}
               {searchResults.length > 0 && (
                 <div className="absolute top-full left-0 right-0 mt-2 bg-white border border-gray-200 rounded-lg shadow-lg max-h-64 overflow-y-auto z-10">
                   {searchResults.map((result, index) => (
@@ -165,9 +155,7 @@ const HelpSystem = ({ isOpen, onClose }) => {
             </div>
           </div>
 
-          {/* Content Area */}
           <div className="flex flex-1 overflow-hidden">
-            {/* Sidebar Navigation */}
             <div className="w-64 border-r border-gray-200 overflow-y-auto bg-gray-50">
               <nav className="p-4 space-y-1">
                 {Object.entries(helpContent).map(([tabId, tab]) => (
@@ -190,7 +178,6 @@ const HelpSystem = ({ isOpen, onClose }) => {
               </nav>
             </div>
 
-            {/* Main Content */}
             <div className="flex-1 overflow-y-auto p-6">
               <div className="max-w-3xl">
                 <h3 className="text-2xl font-bold text-gray-900 mb-6 flex items-center gap-3">
@@ -252,7 +239,7 @@ const HelpSystem = ({ isOpen, onClose }) => {
                           </div>
                         </div>
                       )}
-
+{/* 
                       {section.shortcuts && (
                         <div className="mt-4">
                           <p className="text-sm font-medium text-gray-900 mb-2">
@@ -272,7 +259,7 @@ const HelpSystem = ({ isOpen, onClose }) => {
                             ))}
                           </div>
                         </div>
-                      )}
+                      )} */}
                     </section>
                   ))}
                 </div>
@@ -280,7 +267,6 @@ const HelpSystem = ({ isOpen, onClose }) => {
             </div>
           </div>
 
-          {/* Footer */}
           <div className="flex items-center justify-between px-6 py-4 border-t border-gray-200 bg-gray-50">
             <div className="text-sm text-gray-600">
               Need more help?{' '}
@@ -306,7 +292,6 @@ HelpSystem.propTypes = {
   onClose: PropTypes.func.isRequired,
 };
 
-// Help Content
 const helpContent = {
   'getting-started': {
     title: 'Getting Started',
@@ -322,18 +307,19 @@ const helpContent = {
         content: 'Follow these steps to run your first analysis:',
         steps: [
           'Navigate to the Workspace tab',
-          'Load a text (upload, select from library, or paste)',
-          'Choose how to segment the text (default: 2-line pairs)',
-          'Click "Continue to Analysis"',
-          'Select cipher methods (default: top 4 methods)',
+          'Select a text from Library, Upload a file, or Paste text',
+          'Text automatically segments into 3-line pairs (or customize in Full Editor)',
+          'Review segment statistics in the right sidebar',
+          'Click "Proceed to Analysis" when ready',
+          'Configure cipher methods and filters in Analyze tab',
           'Click "Start Analysis"',
-          'Browse results in the Results tab',
+          'View results in the Results tab',
         ],
       },
       {
         title: 'Understanding the Interface',
         content:
-          'The tool has four main views: Workspace (load texts), Analyze (configure analysis), Results (browse patterns), and Library (manage sources). Navigation is always available at the top of the screen.',
+          'The tool has four main views accessible from the top navigation: Workspace (load & segment texts), Analyze (configure & run analysis), Results (browse patterns), and Library (manage sources). The interface is fully responsive and works on desktop, tablet, and mobile devices.',
       },
     ],
   },
@@ -345,38 +331,57 @@ const helpContent = {
       {
         title: 'Loading Source Texts',
         content:
-          'You can load texts in three ways: upload a file (.txt), select from the pre-loaded library of Elizabethan texts, or paste text directly. The library includes major works by Marlowe, Shakespeare, and contemporaries.',
+          'You can load texts in three ways using the tabbed interface: Library (pre-loaded Elizabethan texts including Marlowe, Shakespeare, Spanish Tragedy, and KJV Bible), Upload (your own .txt, .rtf, or .doc files), or Paste (copy text directly into the tool).',
         tips: [
-          'Use library sources for the most reliable results',
-          'Uploaded texts should be plain text format',
-          'Remove modern editorial notes before analysis',
+          'Use Quick Select buttons for instant access to popular texts',
+          'Search library by title, author, or edition',
+          'Filter by category to find specific types of works',
+          'Uploaded files must be under 10MB',
         ],
       },
       {
-        title: 'Text Segmentation',
+        title: 'Automatic Segmentation',
         content:
-          'Segmentation divides your text into analyzable chunks. Different types of encoding work best with different segment sizes.',
+          'When you load a text, it\'s automatically segmented into 3-line pairs ready for analysis. You can see segment statistics in the right sidebar including total count, valid segments, invalid segments, and validity percentage.',
+        tips: [
+          'Valid segments must have 50-1000 letters (updated from 20 minimum)',
+          'Quick Actions in sidebar for fast re-segmentation',
+          'Segments are saved automatically - no need to manually save',
+        ],
+      },
+      {
+        title: 'Split View vs Full Editor',
+        content:
+          'The Workspace offers two layouts: Split View (integrated experience with source picker, text display, and quick stats) and Full Editor (advanced segmentation tool with complete control). Toggle between them using the buttons in the header.',
         steps: [
-          'Choose a segmentation mode (2-line pairs, titles, first 2 lines, by clause, or custom)',
-          'Preview the segments to verify they make sense',
-          'Adjust if needed - you can manually mark boundaries',
-          'Each segment will be analyzed independently',
-        ],
-        tips: [
-          '2-line pairs work well for poetry and plays',
-          'Title-only mode is fastest for initial exploration',
-          'For prose, try clause-based segmentation',
+          'Start in Split View to quickly load and preview text',
+          'Use Quick Actions for rapid 3-line segmentation',
+          'Switch to Full Editor for custom segmentation',
+          'Full Editor offers 5 modes: by lines, by letters, by punctuation, by sentences, or manual',
         ],
       },
       {
-        title: 'Edition Comparison',
+        title: 'Full Editor - Advanced Segmentation',
         content:
-          'Enable comparison mode to analyze multiple editions side-by-side. This reveals how textual corruption affects cipher detection. Differences between editions are automatically highlighted.',
+          'The Full Editor provides powerful tools for precise text segmentation including automated modes, manual boundary control, merge mode, text selection segmentation, and real-time validation with quality scoring.',
         tips: [
-          'Compare "bad" quartos with "good" quartos',
-          'Look for patterns that survive textual corruption',
-          'Use to identify intentional vs. accidental variants',
+          'Select text with cursor to create custom segments',
+          'Click segment headers to select them',
+          'Hover between lines to add/remove boundaries',
+          'Use Merge Mode to combine multiple consecutive segments',
+          'Undo/Redo support (Ctrl+Z / Ctrl+Y)',
+          'Export segments to JSON for backup',
         ],
+      },
+      {
+        title: 'Segmentation Modes',
+        content:
+          'Lines: Fixed number of lines per segment (1-10)\n\nLetters: Target letter count with optional auto-balancing (50-500)\n\nPunctuation: Splits at sentence endings (. ! ? ; :)\n\nSentences: Groups by sentence count (1-5)\n\nManual: Complete control - click to add/remove boundaries',
+      },
+      {
+        title: 'Validation & Quality',
+        content:
+          'Each segment shows real-time validation status. Green = valid (50-1000 letters), Yellow = too short (<50 letters), Red = too long (>1000 letters). Quality score (0-100%) measures how close to ideal length (100 letters). Statistics show average quality across all segments.',
       },
     ],
   },
@@ -388,17 +393,17 @@ const helpContent = {
       {
         title: 'Cipher Methods',
         content:
-          'The tool supports 9 validated cipher methods from the Renaissance period. Each method has a different success rate based on corpus analysis. The top 4 methods (Unusual Spelling, Nomenclator, Anagram, Caesar ROT-13) account for 75% of high-confidence findings.',
+          'The tool supports 9 validated cipher methods from the Renaissance period. Each method has different success rates based on corpus analysis. Top 4 methods (Unusual Spelling, Nomenclator, Anagram, Caesar ROT-13) account for 75% of high-confidence findings.',
         tips: [
           'Start with "Top 4" for fastest results',
           'Enable all methods for comprehensive analysis',
-          'Experimental methods are slower but may find rare patterns',
+          'Experimental methods may find rare patterns but take longer',
         ],
       },
       {
         title: 'View Modes',
         content:
-          'View modes filter results based on thematic priorities:\n\nStandard Post-1593: Prioritizes Whitgift, hoohoo, Hen, de Vere (most common for mature work)\n\nJuvenilia Pre-1593: Prioritizes Roger Manwood, Cate, classical references (early work)\n\nAlt Cipher Mode: No thematic bias, pure statistical scoring\n\nShow Everything: Raw top 500 results with no filtering',
+          'View modes filter results based on thematic priorities:\n\nStandard Post-1593: Prioritizes Whitgift, hoohoo, Hen, de Vere (most common for mature work)\n\nJuvenilia Pre-1593: Prioritizes Roger Manwood, Cate, classical references (early work)\n\nAlt Cipher Mode: No thematic bias, pure statistical scoring\n\nShow Everything: Raw top results with no filtering',
         tips: [
           'Use Standard for plays and late poetry',
           'Use Juvenilia for Ovid translations and early work',
@@ -408,23 +413,17 @@ const helpContent = {
       {
         title: 'Filters & Thresholds',
         content:
-          'Spoilage tolerance controls how much "unused" letters are acceptable. Lower spoilage indicates cleaner encoding. Research shows 5-12% is typical for intentional encoding.',
-        steps: [
-          'Set spoilage tolerance (0-40%)',
-          'Add entity search to find specific people',
-          'Add word search to find specific themes',
-          'Use exclusions to filter out unwanted patterns',
-        ],
+          'Spoilage tolerance controls unused letters percentage. Lower spoilage indicates cleaner encoding. Research shows 5-12% is typical for intentional encoding. Use entity search to find specific historical figures. Add word search to find thematic content. Set minimum composite score to filter low-quality results (70+ is high confidence).',
         tips: [
-          'Titles average 6.2% spoilage',
-          'Body text averages 9.1% spoilage',
+          'Typical spoilage: 5-20%',
           'Very low spoilage (<3%) may indicate cherry-picking',
+          'Results per segment affects processing time (default: 100)',
         ],
       },
       {
         title: 'Running Analysis',
         content:
-          'Analysis processes each segment through selected cipher methods. Progress is shown in real-time. Typical analysis takes 20-60 seconds depending on segment count and methods selected.',
+          'Analysis processes each valid segment through selected cipher methods. Progress shown in real-time with current segment, progress percentage, results found so far, and high-confidence count. Typical analysis: 20-60 seconds depending on segment count and methods.',
         shortcuts: [
           { action: 'Start analysis', keys: 'Enter' },
           { action: 'Pause', keys: 'Space' },
@@ -441,28 +440,27 @@ const helpContent = {
       {
         title: 'Understanding Results',
         content:
-          'Each result shows a decoded pattern with multiple scoring dimensions. Composite score (0-100) combines entity recognition, linguistic coherence, statistical significance, and spoilage quality. Scores above 70 are considered high-confidence.',
+          'Each result shows a decoded pattern with multiple scoring dimensions. Composite score (0-100) combines entity recognition, linguistic coherence, statistical significance, and spoilage quality. Scores above 70 are high-confidence. Results display in cards with expandable details.',
       },
       {
         title: 'Score Breakdown',
         content:
-          'Entity Score: How well entities match historical figures\n\nLinguistic Score: Grammatical coherence and semantic meaning\n\nStatistical Score: Letter frequency and distribution patterns\n\nSpoilage Score: Percentage of letters successfully used',
+          'Entity Score: Match quality with historical figures\n\nLinguistic Score: Grammatical coherence and semantic meaning\n\nStatistical Score: Letter frequency and distribution patterns\n\nSpoilage Score: Percentage of letters successfully used',
         tips: [
-          'Focus on patterns with composite scores >70',
+          'Focus on composite scores >70',
           'High entity scores suggest historical references',
-          'Low spoilage with high scores indicates strong encoding',
+          'Low spoilage + high scores = strong encoding',
         ],
       },
-
       {
-        title: 'Transformation Log',
+        title: 'Result Cards',
         content:
-          'Expand any result to see the step-by-step transformation from original text to decoded pattern. This shows normalization (long s, ligatures), letter inventory, permutation count, and final matching.',
+          'Each result card shows the decoded pattern, composite score with visual indicator, segment information, spoilage percentage, detected entities, cipher method used, and expandable transformation log. Select multiple results using checkboxes for batch operations.',
       },
       {
-        title: 'Sorting & Filtering',
+        title: 'Filtering & Sorting',
         content:
-          'Results can be sorted by any score dimension. Filter by minimum score, cipher method or detected entities. Use quick filters for common views like "High confidence only".',
+          'Filter bar above results allows filtering by minimum score, cipher method, detected entities, and quick filters (high confidence only, low spoilage, specific themes). Sort results by any score dimension. Search within results using Ctrl+F.',
         shortcuts: [
           { action: 'Expand result', keys: 'Space' },
           { action: 'Next result', keys: '↓' },
@@ -473,7 +471,7 @@ const helpContent = {
       {
         title: 'Exporting Results',
         content:
-          'Export results to CSV, JSON, or Google Sheets. Options include transformation logs and score breakdowns. Selected patterns can be batch exported. Use exports for further analysis in spreadsheet software.',
+          'Export controls in header allow exporting to CSV, JSON, or copying to clipboard. Options include: all results or selected only, include transformation logs, include score breakdowns, and include segment text. Use exports for further analysis in spreadsheet software.',
       },
     ],
   },
@@ -485,69 +483,73 @@ const helpContent = {
       {
         title: 'Source Library',
         content:
-          'The library contains 200+ pre-loaded Elizabethan texts including Marlowe plays and poetry, Shakespeare quartos, Spanish Tragedy, King James Bible, and other period works. Sources are organized by author and category.',
+          'The library contains 200+ pre-loaded Elizabethan texts organized by category: Marlowe Plays, Marlowe Poetry, Spanish Tragedy, Shakespeare Tragedies, Shakespeare Histories, Shakespeare Poetry, King James Bible, Other Poetry, Prose Works. Use search and category filters to find specific texts.',
         tips: [
-          'Use search to quickly find texts',
-          'Compare different editions of the same work',
-          'Metadata shows source authority and quality scores',
+          'Quick Select buttons for popular texts',
+          'Search by title, author, or edition',
+          'Each source shows character count and quality score',
         ],
       },
       {
-        title: 'Saved Sessions',
+        title: 'Source Management',
         content:
-          'Every analysis is automatically saved as a session. Sessions preserve your source text, segmentation, configuration, and results. Restore any session to continue working or export historical data.',
-        steps: [
-          'Sessions save automatically after each analysis',
-          'Click "Restore" to load a previous session',
-          'Export sessions to backup your work',
-          'Delete old sessions to free up storage',
-        ],
+          'Each source card shows title, author, publication year, edition info, character count, and quality score (if available). Click a source to load it in Workspace. Sources are read-only but you can upload your own texts.',
       },
       {
-        title: 'Uploading Custom Texts',
+        title: 'User Uploads',
         content:
-          'Upload your own texts for analysis. Supported formats include .txt, .rtf, and .doc. Remove modern editorial content for best results. Large files may take longer to process.',
+          'Uploaded texts are stored in the "My Uploads" category. They persist in browser storage and can be used like library sources. Upload supports .txt, .rtf, and .doc files up to 10MB. Pasted texts also appear here.',
+        tips: [
+          'Remove modern editorial notes before upload',
+          'Keep original spelling and punctuation',
+          'Avoid texts with extensive corruption',
+        ],
       },
     ],
   },
 
-  'keyboard-shortcuts': {
-    title: 'Keyboard Shortcuts',
-    icon: '⌨️',
-    sections: [
-      {
-        title: 'Global Shortcuts',
-        shortcuts: [
-          { action: 'Workspace', keys: 'Ctrl+1' },
-          { action: 'Analyze', keys: 'Ctrl+2' },
-          { action: 'Results', keys: 'Ctrl+3' },
-          { action: 'Library', keys: 'Ctrl+4' },
-          { action: 'Settings', keys: 'Ctrl+,' },
-          { action: 'Help', keys: 'F1' },
-          { action: 'Save session', keys: 'Ctrl+S' },
-          { action: 'New analysis', keys: 'Ctrl+N' },
-        ],
-      },
-      {
-        title: 'Results View',
-        shortcuts: [
-          { action: 'Expand/collapse', keys: 'Space' },
-          { action: 'Next result', keys: '↓' },
-          { action: 'Previous result', keys: '↑' },
-          { action: 'Search', keys: 'Ctrl+F' },
-          { action: 'Export', keys: 'Ctrl+E' },
-        ],
-      },
-      {
-        title: 'Analysis',
-        shortcuts: [
-          { action: 'Start', keys: 'Enter' },
-          { action: 'Pause', keys: 'Space' },
-          { action: 'Cancel', keys: 'Esc' },
-        ],
-      },
-    ],
-  },
+  // 'keyboard-shortcuts': {
+  //   title: 'Keyboard Shortcuts',
+  //   icon: '⌨️',
+  //   sections: [
+  //     {
+  //       title: 'Global Shortcuts',
+  //       shortcuts: [
+  //         { action: 'Workspace', keys: 'Ctrl+1' },
+  //         { action: 'Analyze', keys: 'Ctrl+2' },
+  //         { action: 'Results', keys: 'Ctrl+3' },
+  //         { action: 'Library', keys: 'Ctrl+4' },
+  //         { action: 'Help', keys: 'F1' },
+  //         { action: 'Toggle layout', keys: 'Ctrl+L' },
+  //       ],
+  //     },
+  //     {
+  //       title: 'Full Editor',
+  //       shortcuts: [
+  //         { action: 'Undo', keys: 'Ctrl+Z' },
+  //         { action: 'Redo', keys: 'Ctrl+Y' },
+  //         { action: 'Back to split view', keys: 'Esc' },
+  //       ],
+  //     },
+  //     {
+  //       title: 'Results View',
+  //       shortcuts: [
+  //         { action: 'Expand/collapse', keys: 'Space' },
+  //         { action: 'Next result', keys: '↓' },
+  //         { action: 'Previous result', keys: '↑' },
+  //         { action: 'Search', keys: 'Ctrl+F' },
+  //       ],
+  //     },
+  //     {
+  //       title: 'Analysis',
+  //       shortcuts: [
+  //         { action: 'Start', keys: 'Enter' },
+  //         { action: 'Pause', keys: 'Space' },
+  //         { action: 'Cancel', keys: 'Esc' },
+  //       ],
+  //     },
+  //   ],
+  // },
 
   faq: {
     title: 'FAQ',
@@ -556,29 +558,38 @@ const helpContent = {
       {
         title: 'What is cipher deciphering?',
         content:
-          'Cipher deciphering detects hidden messages encoded in literary texts using Renaissance cryptographic methods. This research, pioneered by Roberta, suggests Marlowe systematically encoded autobiographical and historical information in his works.',
+          'Cipher deciphering detects hidden messages encoded in literary texts using Renaissance cryptographic methods. This research, pioneered by Roberta, suggests Marlowe systematically encoded autobiographical and historical information in his works and possibly others attributed to Shakespeare.',
       },
       {
         title: 'How accurate are the results?',
         content:
-          'High-confidence results (composite score >70) have been validated against Roberta\'s 45 years of manual research. The tool uses statistical methods to avoid false positives. Always verify interesting patterns by checking transformation logs.',
+          'High-confidence results (composite score >70) have been validated against 45 years of manual research. The tool uses statistical methods to avoid false positives. Always verify interesting patterns by checking transformation logs and understanding the cipher method used.',
+      },
+      {
+        title: 'What makes a segment valid?',
+        content:
+          'Valid segments have 50-1000 letters. This range was updated from the original 20 minimum to improve quality. Segments outside this range are flagged as invalid and excluded from analysis. The Full Editor shows real-time validation for all segments.',
       },
       {
         title: 'What is spoilage?',
         content:
-          'Spoilage is the percentage of letters in the original segment that couldn\'t be used in the decoded pattern. Lower spoilage suggests more systematic encoding. Research shows 5-12% is typical for intentional ciphers, while random anagrams average 30-40%.',
+          'Spoilage is the percentage of letters that couldn\'t be used in the decoded pattern. Lower spoilage suggests more systematic encoding. Research shows 5-12% is typical for intentional ciphers, while random anagrams average 30-40%. Very low spoilage (<3%) may indicate cherry-picking.',
       },
       {
-        title: 'Why do some analyses take longer?',
+        title: 'Why use different view modes?',
         content:
-          'Processing time depends on: number of segments, cipher methods selected, and filter complexity. Large texts with all methods enabled may take 5-10 minutes. Use "Top 4" methods for faster results.',
+          'View modes prioritize different thematic content. Standard Post-1593 focuses on mature work themes (Whitgift, court figures). Juvenilia Pre-1593 focuses on early work (Roger Manwood, classical references). Alt Cipher uses pure statistical scoring. Show Everything displays raw results.',
       },
       {
         title: 'Can I analyze modern texts?',
         content:
           'The tool is optimized for Elizabethan English and Renaissance cipher methods. Modern texts will produce results but are unlikely to show systematic encoding patterns. Entity recognition is calibrated for 16th-17th century historical figures.',
       },
-
+      {
+        title: 'How do I create custom segments?',
+        content:
+          'Use the Full Editor (click "Open Full Editor" in Workspace). You can: select text with cursor to create segments, use automated modes (lines, letters, punctuation, sentences), manually click between lines to add/remove boundaries, or use Merge Mode to combine segments.',
+      },
     ],
   },
 
@@ -587,29 +598,34 @@ const helpContent = {
     icon: '🔧',
     sections: [
       {
-        title: 'No results found',
+        title: 'No segments appearing',
         content:
-          'If analysis completes but finds no patterns, try: lowering spoilage tolerance, enabling more cipher methods, using different segmentation, or removing entity/word filters. Some texts may not contain systematic encoding.',
+          'If you load a text but see no segments: Check that text actually loaded (view character count). Segments auto-generate on load. If missing, use Quick Actions "Quick Segment (3 lines)" in sidebar. For custom segmentation, open Full Editor.',
       },
       {
-        title: 'Analysis is very slow',
+        title: 'All segments invalid',
         content:
-          'Reduce segment count by using title-only mode, select fewer cipher methods (use "Top 4"), or increase spoilage tolerance to reduce computation. You can also analyze sections of long texts separately.',
+          'If all segments show as invalid: Check segment lengths - must be 50-1000 letters. Short texts may need fewer lines per segment. Long poetic lines may need more lines. Use Full Editor to adjust segmentation mode or manually create boundaries.',
+      },
+      {
+        title: 'Analysis takes too long',
+        content:
+          'To speed up analysis: Reduce segment count using Quick Actions. Select fewer cipher methods (use "Top 4"). Increase spoilage tolerance. Lower "Results Per Segment" in filters. Analyze sections of long texts separately.',
       },
       {
         title: 'Results seem random',
         content:
-          'Very high spoilage (>20%), low composite scores (<50), or lack of entity matches suggest random anagrams rather than systematic encoding. Focus on high-confidence results and look for patterns across multiple segments.',
+          'Random-looking results may indicate: Very high spoilage (>20%), Low composite scores (<50), No entity matches, Inconsistent patterns across segments. Focus on high-confidence results and look for patterns across multiple segments.',
       },
       {
-        title: 'Can\'t load a text',
+        title: 'Can\'t switch to Full Editor',
         content:
-          'Ensure files are plain text format (.txt). Remove special characters, formatting, and editorial notes. Very large files (>1MB) may timeout - try analyzing sections separately.',
+          'If Full Editor button doesn\'t work: Ensure text is fully loaded. Check browser console for errors. Try reloading the page. If problem persists, use Quick Actions in sidebar for basic segmentation.',
       },
       {
-        title: 'Settings not saving',
+        title: 'Lost my segments',
         content:
-          'Check browser localStorage is enabled. Clear browser cache if settings appear corrupted. Settings are stored locally and won\'t sync across devices.',
+          'Segments are saved automatically when you navigate away from Workspace. If segments seem lost: Return to Workspace. Check if correct source is selected. Segments regenerate if missing. For custom segments, you may need to recreate them in Full Editor.',
       },
     ],
   },

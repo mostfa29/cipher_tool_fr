@@ -194,7 +194,7 @@ const Navigation = ({
           )}
 
           {/* Settings Button */}
-          <button
+          {/* <button
             onClick={onSettingsClick}
             className="p-2 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors"
             title="Settings (Ctrl+,)"
@@ -214,7 +214,7 @@ const Navigation = ({
                 d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"
               />
             </svg>
-          </button>
+          </button> */}
 
           {/* Help Button */}
           <button
@@ -360,7 +360,7 @@ const Navigation = ({
               <div className="my-2 border-t border-gray-200" />
 
               {/* Settings */}
-              <button
+              {/* <button
                 onClick={() => {
                   onSettingsClick();
                   closeMobileMenu();
@@ -382,7 +382,7 @@ const Navigation = ({
                   />
                 </svg>
                 <span>Settings</span>
-              </button>
+              </button> */}
 
               {/* Help */}
               <button

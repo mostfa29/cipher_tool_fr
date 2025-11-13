@@ -32,15 +32,17 @@ const FilterPanel = ({
   ];
 
   // Filter entity suggestions based on input
-  const entitySuggestions = availableEntities
-    .filter(entity => {
-      const searchLower = entitySearchInput.toLowerCase();
-      return (
-        entity.name.toLowerCase().includes(searchLower) ||
-        entity.name_variants?.some(v => v.toLowerCase().includes(searchLower))
-      ) && !filters.entitySearch.includes(entity.name);
-    })
-    .slice(0, 10);
+// Filter entity suggestions based on input
+const entitySuggestions = availableEntities
+  .filter(entity => {
+    const searchLower = entitySearchInput.toLowerCase();
+    const entitySearchArray = filters.entitySearch || []; // Add this safety check
+    return (
+      entity.name.toLowerCase().includes(searchLower) ||
+      entity.name_variants?.some(v => v.toLowerCase().includes(searchLower))
+    ) && !entitySearchArray.includes(entity.name); // Use the safe array
+  })
+  .slice(0, 10);
 
   // Handle spoilage change
   const handleSpoilageChange = (value) => {

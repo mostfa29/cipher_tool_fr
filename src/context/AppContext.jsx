@@ -120,15 +120,15 @@ function appReducer(state, action) {
         ui: { ...state.ui, hasUnsavedChanges: false },
       };
 
-    case ACTIONS.SET_SEGMENTS:
-      return {
-        ...state,
-        workspace: {
-          ...state.workspace,
-          segments: action.payload,
-        },
-        ui: { ...state.ui, hasUnsavedChanges: true },
-      };
+case ACTIONS.SET_SEGMENTS:
+  return {
+    ...state,
+    workspace: {
+      ...state.workspace,
+      segments: action.payload,
+    },
+    ui: { ...state.ui, hasUnsavedChanges: true },
+  };
 
     case ACTIONS.SET_BOUNDARIES:
       return {

@@ -1,6 +1,6 @@
 // src/App.jsx
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { useAppState, ACTIONS } from './context/AppContext';
 
 // AppShell Components
@@ -11,7 +11,7 @@ import HelpSystem from './AppShell/HelpSystem';
 // WorkspaceView Components
 import SourcePicker from './WorkspaceView/SourcePicker';
 import VirtualizedTextDisplay from './WorkspaceView/VirtualizedTextDisplay';
-import EnhancedSegmentationTool from './WorkspaceView/EnhancedSegmentationTool'; // NEW
+import EnhancedSegmentationTool from './WorkspaceView/EnhancedSegmentationTool';
 
 // AnalyzeView Components
 import MethodSelector from './AnalyzeView/MethodSelector';
@@ -58,49 +58,81 @@ function App() {
         lineCount: end - start,
         text,
         letterCount,
-        isValid: letterCount >= 100 && letterCount <= 500
+        isValid: letterCount >= 50 && letterCount <= 1000
       };
     });
   }, [state.workspace.activeSource, state.workspace.boundaries]);
 
   // Handle navigation
-  const handleNavigate = (viewName) => {
-    // Check for unsaved changes
-    if (state.ui.hasUnsavedChanges) {
-      const confirmed = window.confirm(
-        'You have unsaved changes. Are you sure you want to leave this page?'
-      );
-      if (!confirmed) return;
-    }
+const handleNavigate = (viewName) => {
+  // Remove this check - segments auto-save
+  // if (state.ui.hasUnsavedChanges) {
+  //   const confirmed = window.confirm(
+  //     'You have unsaved changes. Are you sure you want to leave this page?'
+  //   );
+  //   if (!confirmed) return;
+  // }
 
-    dispatch({ type: ACTIONS.SET_ACTIVE_VIEW, payload: viewName });
-    
-    // Clear unsaved changes flag
-    if (state.ui.hasUnsavedChanges) {
-      dispatch({ type: ACTIONS.SET_UNSAVED_CHANGES, payload: false });
-    }
-  };
-
+  dispatch({ type: ACTIONS.SET_ACTIVE_VIEW, payload: viewName });
+  
+  // Clear unsaved changes flag
+  if (state.ui.hasUnsavedChanges) {
+    dispatch({ type: ACTIONS.SET_UNSAVED_CHANGES, payload: false });
+  }
+};
   // Handle boundaries change
-  const handleBoundariesChange = (newBoundaries) => {
-    dispatch({ type: ACTIONS.SET_BOUNDARIES, payload: newBoundaries });
-    dispatch({ type: ACTIONS.SET_UNSAVED_CHANGES, payload: true });
-  };
+  const handleBoundariesChange = useCallback((newBoundaries) => {
+  dispatch({ type: ACTIONS.SET_BOUNDARIES, payload: newBoundaries });
+  dispatch({ type: ACTIONS.SET_UNSAVED_CHANGES, payload: true });
+  }, [dispatch]);
+
+  const handleSegmentsChange = useCallback((segments) => {
+    dispatch({ type: ACTIONS.SET_SEGMENTS, payload: segments });
+  }, [dispatch]);
+
+
 
   // Handle source selection
   const handleSourceSelect = (source) => {
     dispatch({ type: ACTIONS.SET_ACTIVE_SOURCE, payload: source });
     
-    // Initialize boundaries for new source
+    // Initialize boundaries for new source with a default segmentation
     const lines = source.text.split('\n');
-    const initialBoundaries = [0, lines.length];
+    const initialBoundaries = [0];
+    
+    // Default to 3 lines per segment
+    for (let i = 3; i < lines.length; i += 3) {
+      initialBoundaries.push(i);
+    }
+    initialBoundaries.push(lines.length);
+    
     dispatch({ type: ACTIONS.SET_BOUNDARIES, payload: initialBoundaries });
+    
+    // Also update segments
+    const segments = initialBoundaries.slice(0, -1).map((start, i) => {
+      const end = initialBoundaries[i + 1];
+      const segmentLines = lines.slice(start, end);
+      const text = segmentLines.join('\n');
+      const letterCount = text.replace(/[^a-zA-Z]/g, '').length;
+      
+      return {
+        id: i + 1,
+        startLine: start,
+        endLine: end,
+        lineCount: end - start,
+        text,
+        letterCount,
+        isValid: letterCount >= 50 && letterCount <= 1000
+      };
+    });
+    
+    dispatch({ type: ACTIONS.SET_SEGMENTS, payload: segments });
     
     dispatch({ 
       type: ACTIONS.ADD_NOTIFICATION, 
       payload: {
         type: 'success',
-        message: `Source "${source.title}" loaded successfully`,
+        message: `Source "${source.title}" loaded with ${segments.length} segments`,
         duration: 3000
       }
     });
@@ -244,6 +276,7 @@ function App() {
                 source={state.workspace.activeSource}
                 boundaries={state.workspace.boundaries || []}
                 onBoundariesChange={handleBoundariesChange}
+                onSegmentsChange={handleSegmentsChange}
                 onBack={() => setWorkspaceLayout('integrated')}
               />
             ) : (
@@ -327,14 +360,41 @@ function App() {
                         </button>
                         <button
                           onClick={() => {
-                            // Quick generate with defaults
                             const lines = state.workspace.activeSource.text.split('\n');
                             const newBoundaries = [0];
                             for (let i = 3; i < lines.length; i += 3) {
                               newBoundaries.push(i);
                             }
                             newBoundaries.push(lines.length);
-                            handleBoundariesChange(newBoundaries);
+                            
+                            // Create segments
+                            const segments = newBoundaries.slice(0, -1).map((start, i) => {
+                              const end = newBoundaries[i + 1];
+                              const segmentLines = lines.slice(start, end);
+                              const text = segmentLines.join('\n');
+                              const letterCount = text.replace(/[^a-zA-Z]/g, '').length;
+                              
+                              return {
+                                id: i + 1,
+                                startLine: start,
+                                endLine: end,
+                                lineCount: end - start,
+                                text,
+                                letterCount,
+                                isValid: letterCount >= 50 && letterCount <= 1000
+                              };
+                            });
+                            
+                            dispatch({ type: ACTIONS.SET_BOUNDARIES, payload: newBoundaries });
+                            dispatch({ type: ACTIONS.SET_SEGMENTS, payload: segments });
+                            
+                            dispatch({
+                              type: ACTIONS.ADD_NOTIFICATION,
+                              payload: {
+                                type: 'success',
+                                message: `Created ${segments.length} segments (${segments.filter(s => s.isValid).length} valid)`
+                              }
+                            });
                           }}
                           className="w-full px-3 py-2 text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors text-left"
                         >
@@ -403,7 +463,7 @@ function App() {
                       <h3 className="text-sm font-semibold text-blue-900 mb-2">💡 Tips</h3>
                       <ul className="text-xs text-blue-800 space-y-1">
                         <li>• Click between lines to add boundaries</li>
-                        <li>• Valid segments: 100-500 letters</li>
+                        <li>• Valid segments: 50-1000 letters</li>
                         <li>• Use Full Editor for advanced controls</li>
                         <li>• Ctrl+L to toggle layout</li>
                       </ul>
@@ -619,7 +679,7 @@ function App() {
                 >
                   Sources ({state.library.availableSources?.length || 0})
                 </button>
-                <button
+                {/* <button
                   onClick={() => dispatch({ type: ACTIONS.SET_LIBRARY_TAB, payload: 'sessions' })}
                   className={`
                     px-4 py-2 border-b-2 font-medium text-sm transition-colors
@@ -630,7 +690,7 @@ function App() {
                   `}
                 >
                   Sessions ({state.library.sessions?.length || 0})
-                </button>
+                </button> */}
               </nav>
             </div>
 
