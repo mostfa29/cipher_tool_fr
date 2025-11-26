@@ -7,7 +7,7 @@ import { loadFromStorage, saveToStorage } from '../utils/storage';
 export const AppContext = createContext();
 
 // ==================== API CLIENT ====================
-const API_BASE_URL = 'http://localhost:8000';
+const API_BASE_URL = 'http://192.99.245.215:8000';
 
 class APIClient {
   constructor(baseURL) {
