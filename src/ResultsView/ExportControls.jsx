@@ -1,24 +1,65 @@
-// components/ExportControls.jsx
+// ResultsView/ExportControls.jsx
 
-import React, { useState } from 'react';
-import PropTypes from 'prop-types';
-import { useAppState } from '../context/AppContext';
+import React, { useState, useMemo } from 'react';
+import { useAppState, ACTIONS } from '../context/AppContext';
 
-const ExportControls = ({
-  selectedPatterns = [],
-  allPatterns = [],
-  onExport,
-  isExporting = false,
-}) => {
-  const { state } = useAppState();
+const ExportControls = () => {
+  const { state, dispatch, exportResults } = useAppState();
   const [showExportModal, setShowExportModal] = useState(false);
   const [exportConfig, setExportConfig] = useState({
-    format: state.settings.export.format || 'csv',
-    includeTransformationLogs: state.settings.export.includeTransformationLogs || false,
-    includeScoreBreakdown: state.settings.export.includeScoreBreakdown !== false,
+    format: state.settings?.export?.format || 'json',
+    includeTransformationLogs: state.settings?.export?.includeTransformationLogs || false,
+    includeScoreBreakdown: state.settings?.export?.includeScoreBreakdown !== false,
     includeMetadata: true,
     scope: 'selected', // 'selected' | 'filtered' | 'all'
   });
+
+  // Get data from state
+  const selectedPatterns = state.results.selectedPatterns || [];
+  const allPatterns = state.results.patterns || [];
+  const isExporting = state.results.isExporting || false;
+
+  // Filter patterns based on active filters
+  const filteredPatterns = useMemo(() => {
+    const filters = state.results.activeFilters || {};
+    let filtered = [...allPatterns];
+
+    // Apply score range filter
+    if (filters.minScore > 0) {
+      filtered = filtered.filter(p => (p.scores?.composite || p.composite_score || 0) >= filters.minScore);
+    }
+    if (filters.maxScore < 100) {
+      filtered = filtered.filter(p => (p.scores?.composite || p.composite_score || 0) <= filters.maxScore);
+    }
+
+    // Apply methods filter
+    if (filters.methods?.length > 0) {
+      filtered = filtered.filter(p => {
+        const method = p.decoding_method || p.best_candidate?.method || p.method;
+        return method && filters.methods.includes(method);
+      });
+    }
+
+    // Apply entities filter
+    if (filters.entities?.length > 0) {
+      filtered = filtered.filter(p => {
+        const entities = p.entity_matches || p.entities_detected || [];
+        return entities.some(e => filters.entities.includes(e.name || e));
+      });
+    }
+
+    // Apply high confidence filter
+    if (filters.highConfidenceOnly) {
+      filtered = filtered.filter(p => (p.scores?.composite || p.composite_score || 0) >= 70);
+    }
+
+    return filtered;
+  }, [allPatterns, state.results.activeFilters]);
+
+  // Get selected pattern objects
+  const selectedPatternObjects = useMemo(() => {
+    return allPatterns.filter(p => selectedPatterns.includes(p.id));
+  }, [allPatterns, selectedPatterns]);
 
   const exportFormats = [
     {
@@ -36,11 +77,11 @@ const ExportControls = ({
       extension: '.json',
     },
     {
-      id: 'google-sheets',
-      name: 'Google Sheets',
+      id: 'xlsx',
+      name: 'Excel',
       icon: '📈',
-      description: 'Open directly in Google Sheets',
-      extension: null,
+      description: 'Microsoft Excel workbook',
+      extension: '.xlsx',
     },
     {
       id: 'txt',
@@ -55,23 +96,23 @@ const ExportControls = ({
     {
       id: 'selected',
       name: 'Selected Results',
-      description: `Export ${selectedPatterns.length} selected pattern${selectedPatterns.length !== 1 ? 's' : ''}`,
-      count: selectedPatterns.length,
-      disabled: selectedPatterns.length === 0,
+      description: `Export ${selectedPatternObjects.length} selected pattern${selectedPatternObjects.length !== 1 ? 's' : ''}`,
+      count: selectedPatternObjects.length,
+      disabled: selectedPatternObjects.length === 0,
     },
     {
       id: 'filtered',
       name: 'Current View',
-      description: `Export all visible patterns`,
-      count: allPatterns.length,
-      disabled: allPatterns.length === 0,
+      description: 'Export all visible patterns',
+      count: filteredPatterns.length,
+      disabled: filteredPatterns.length === 0,
     },
     {
       id: 'all',
       name: 'All Results',
       description: 'Export complete analysis results',
-      count: state.results.patterns.length,
-      disabled: state.results.patterns.length === 0,
+      count: allPatterns.length,
+      disabled: allPatterns.length === 0,
     },
   ];
 
@@ -87,11 +128,11 @@ const ExportControls = ({
   const getPatternsToExport = () => {
     switch (exportConfig.scope) {
       case 'selected':
-        return selectedPatterns;
+        return selectedPatternObjects;
       case 'filtered':
-        return allPatterns;
+        return filteredPatterns;
       case 'all':
-        return state.results.patterns;
+        return allPatterns;
       default:
         return [];
     }
@@ -102,30 +143,196 @@ const ExportControls = ({
     const patternsToExport = getPatternsToExport();
     
     if (patternsToExport.length === 0) {
+      dispatch({
+        type: ACTIONS.ADD_NOTIFICATION,
+        payload: {
+          type: 'warning',
+          message: 'No patterns to export',
+        },
+      });
       return;
     }
 
     try {
-      await onExport(patternsToExport, exportConfig);
+      // Set exporting state
+      dispatch({ type: ACTIONS.EXPORT_RESULTS });
+
+      // Call the export function from context
+      // The exportResults function should handle the actual export logic
+      if (exportResults) {
+        await exportResults(exportConfig.format);
+      } else {
+        // Fallback: create export data manually
+        await createExportFile(patternsToExport, exportConfig);
+      }
+
+      dispatch({
+        type: ACTIONS.ADD_NOTIFICATION,
+        payload: {
+          type: 'success',
+          message: `Exported ${patternsToExport.length} pattern${patternsToExport.length !== 1 ? 's' : ''} as ${exportConfig.format.toUpperCase()}`,
+        },
+      });
+
       setShowExportModal(false);
     } catch (error) {
       console.error('Export failed:', error);
+      dispatch({
+        type: ACTIONS.ADD_NOTIFICATION,
+        payload: {
+          type: 'error',
+          message: `Export failed: ${error.message}`,
+        },
+      });
+    } finally {
+      // Reset exporting state
+      dispatch({ type: ACTIONS.SET_RESULTS, payload: state.results.patterns });
     }
+  };
+
+  // Create export file (fallback implementation)
+  const createExportFile = async (patterns, config) => {
+    const currentJob = state.analyze.currentJob;
+    const sourceInfo = state.workspace.currentSource;
+
+    let content;
+    let filename;
+    let mimeType;
+
+    const exportData = {
+      metadata: config.includeMetadata ? {
+        exportDate: new Date().toISOString(),
+        source: sourceInfo?.title || 'Unknown',
+        author: sourceInfo?.author || 'Unknown',
+        analysisDate: currentJob?.startTime ? new Date(currentJob.startTime).toISOString() : null,
+        totalPatterns: patterns.length,
+      } : undefined,
+      patterns: patterns.map(p => ({
+        id: p.id,
+        segment: p.section_name || p.segment_id,
+        isEncoded: p.is_encoded,
+        decodedText: p.decoded_pattern || p.best_candidate?.decoded_text,
+        method: p.decoding_method || p.best_candidate?.method,
+        compositeScore: p.scores?.composite || p.composite_score,
+        ...(config.includeScoreBreakdown ? {
+          entityScore: p.scores?.entity_score,
+          linguisticScore: p.scores?.linguistic_score,
+          statisticalScore: p.scores?.statistical_score,
+          spoilageRatio: p.spoilage_ratio,
+        } : {}),
+        entities: p.entity_matches || p.entities_detected || [],
+        isCredible: p.best_candidate?.is_credible || false,
+        ...(config.includeTransformationLogs ? {
+          transformationLog: p.transformation_log || [],
+        } : {}),
+      })),
+    };
+
+    switch (config.format) {
+      case 'json':
+        content = JSON.stringify(exportData, null, 2);
+        filename = `cipher-analysis-${Date.now()}.json`;
+        mimeType = 'application/json';
+        break;
+
+      case 'csv':
+        const headers = [
+          'ID',
+          'Segment',
+          'Decoded Text',
+          'Method',
+          'Composite Score',
+          ...(config.includeScoreBreakdown ? ['Entity Score', 'Linguistic Score', 'Statistical Score', 'Spoilage Ratio'] : []),
+          'Is Encoded',
+          'Is Credible',
+          'Entities',
+        ];
+        
+        const rows = exportData.patterns.map(p => [
+          p.id,
+          p.segment,
+          `"${(p.decodedText || '').replace(/"/g, '""')}"`,
+          p.method,
+          p.compositeScore || 0,
+          ...(config.includeScoreBreakdown ? [
+            p.entityScore || 0,
+            p.linguisticScore || 0,
+            p.statisticalScore || 0,
+            p.spoilageRatio || 0,
+          ] : []),
+          p.isEncoded ? 'Yes' : 'No',
+          p.isCredible ? 'Yes' : 'No',
+          `"${(p.entities || []).map(e => e.name || e).join(', ')}"`,
+        ]);
+
+        content = [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
+        filename = `cipher-analysis-${Date.now()}.csv`;
+        mimeType = 'text/csv';
+        break;
+
+      case 'txt':
+        const lines = [
+          config.includeMetadata ? `Cipher Analysis Export\n${'='.repeat(50)}\n` : '',
+          config.includeMetadata ? `Source: ${exportData.metadata.source}` : '',
+          config.includeMetadata ? `Author: ${exportData.metadata.author}` : '',
+          config.includeMetadata ? `Export Date: ${new Date(exportData.metadata.exportDate).toLocaleString()}` : '',
+          config.includeMetadata ? `Total Patterns: ${exportData.metadata.totalPatterns}\n` : '',
+          '',
+          ...exportData.patterns.map((p, i) => [
+            `\nPattern ${i + 1}`,
+            '-'.repeat(50),
+            `Segment: ${p.segment}`,
+            `Method: ${p.method}`,
+            `Score: ${p.compositeScore || 0}`,
+            `Is Encoded: ${p.isEncoded ? 'Yes' : 'No'}`,
+            `Is Credible: ${p.isCredible ? 'Yes' : 'No'}`,
+            `\nDecoded Text:\n${p.decodedText || 'N/A'}`,
+            p.entities.length > 0 ? `\nEntities: ${p.entities.map(e => e.name || e).join(', ')}` : '',
+          ].join('\n')),
+        ];
+        
+        content = lines.join('\n');
+        filename = `cipher-analysis-${Date.now()}.txt`;
+        mimeType = 'text/plain';
+        break;
+
+      default:
+        throw new Error(`Unsupported format: ${config.format}`);
+    }
+
+    // Download file
+    const blob = new Blob([content], { type: mimeType });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
   };
 
   // Quick export (uses saved settings)
   const handleQuickExport = () => {
-    if (selectedPatterns.length > 0) {
-      onExport(selectedPatterns, {
-        ...exportConfig,
-        scope: 'selected',
+    const config = { ...exportConfig };
+    
+    if (selectedPatternObjects.length > 0) {
+      config.scope = 'selected';
+    } else if (filteredPatterns.length > 0) {
+      config.scope = 'filtered';
+    } else {
+      dispatch({
+        type: ACTIONS.ADD_NOTIFICATION,
+        payload: {
+          type: 'warning',
+          message: 'No patterns to export',
+        },
       });
-    } else if (allPatterns.length > 0) {
-      onExport(allPatterns, {
-        ...exportConfig,
-        scope: 'filtered',
-      });
+      return;
     }
+
+    setExportConfig(config);
+    handleExport();
   };
 
   const patternsToExport = getPatternsToExport();
@@ -135,18 +342,18 @@ const ExportControls = ({
     <>
       {/* Export Button */}
       <div className="flex items-center gap-2">
-        {selectedPatterns.length > 0 && (
+        {selectedPatternObjects.length > 0 && (
           <span className="text-sm text-gray-600">
-            {selectedPatterns.length} selected
+            {selectedPatternObjects.length} selected
           </span>
         )}
         
         <button
           onClick={handleQuickExport}
-          disabled={isExporting || (selectedPatterns.length === 0 && allPatterns.length === 0)}
+          disabled={isExporting || (selectedPatternObjects.length === 0 && filteredPatterns.length === 0)}
           className={`
             flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg transition-colors
-            ${isExporting || (selectedPatterns.length === 0 && allPatterns.length === 0)
+            ${isExporting || (selectedPatternObjects.length === 0 && filteredPatterns.length === 0)
               ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
               : 'bg-blue-600 text-white hover:bg-blue-700'
             }
@@ -173,10 +380,10 @@ const ExportControls = ({
 
         <button
           onClick={() => setShowExportModal(true)}
-          disabled={isExporting || state.results.patterns.length === 0}
+          disabled={isExporting || allPatterns.length === 0}
           className={`
             p-2 rounded-lg transition-colors
-            ${isExporting || state.results.patterns.length === 0
+            ${isExporting || allPatterns.length === 0
               ? 'text-gray-400 cursor-not-allowed'
               : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100'
             }
@@ -429,13 +636,6 @@ const ExportControls = ({
       )}
     </>
   );
-};
-
-ExportControls.propTypes = {
-  selectedPatterns: PropTypes.array,
-  allPatterns: PropTypes.array,
-  onExport: PropTypes.func.isRequired,
-  isExporting: PropTypes.bool,
 };
 
 export default ExportControls;

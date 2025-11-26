@@ -1,22 +1,23 @@
-// components/FilterPanel.jsx
+// src/AnalyzeView/FilterPanel.jsx
 
 import React, { useState } from 'react';
-import PropTypes from 'prop-types';
+import { useAppState, ACTIONS } from '../context/AppContext';
 
 const FilterPanel = ({
-  filters = {
+  isExpanded = true,
+  onToggleExpand,
+}) => {
+  const { state, dispatch } = useAppState();
+  const filters = state.analyze.filters || {
     spoilageMax: 0.15,
     entitySearch: [],
     wordSearch: [],
     wordExclusions: [],
     resultsPerSegment: 100,
     minCompositeScore: 0,
-  },
-  onFiltersChange,
-  availableEntities = [],
-  isExpanded = true,
-  onToggleExpand,
-}) => {
+  };
+  const availableEntities = state.library.entities || [];
+  
   const [entitySearchInput, setEntitySearchInput] = useState('');
   const [wordSearchInput, setWordSearchInput] = useState('');
   const [exclusionInput, setExclusionInput] = useState('');
@@ -32,21 +33,28 @@ const FilterPanel = ({
   ];
 
   // Filter entity suggestions based on input
-// Filter entity suggestions based on input
-const entitySuggestions = availableEntities
-  .filter(entity => {
-    const searchLower = entitySearchInput.toLowerCase();
-    const entitySearchArray = filters.entitySearch || []; // Add this safety check
-    return (
-      entity.name.toLowerCase().includes(searchLower) ||
-      entity.name_variants?.some(v => v.toLowerCase().includes(searchLower))
-    ) && !entitySearchArray.includes(entity.name); // Use the safe array
-  })
-  .slice(0, 10);
+  const entitySuggestions = availableEntities
+    .filter(entity => {
+      const searchLower = entitySearchInput.toLowerCase();
+      const entitySearchArray = filters.entitySearch || [];
+      return (
+        entity.name.toLowerCase().includes(searchLower) ||
+        entity.name_variants?.some(v => v.toLowerCase().includes(searchLower))
+      ) && !entitySearchArray.includes(entity.name);
+    })
+    .slice(0, 10);
+
+  // Update filters helper
+  const updateFilters = (newFilters) => {
+    dispatch({
+      type: ACTIONS.UPDATE_ANALYZE_FILTERS,
+      payload: newFilters,
+    });
+  };
 
   // Handle spoilage change
   const handleSpoilageChange = (value) => {
-    onFiltersChange({
+    updateFilters({
       ...filters,
       spoilageMax: parseFloat(value),
     });
@@ -54,10 +62,11 @@ const entitySuggestions = availableEntities
 
   // Handle entity add
   const handleAddEntity = (entityName) => {
-    if (!filters.entitySearch.includes(entityName)) {
-      onFiltersChange({
+    const entitySearchArray = filters.entitySearch || [];
+    if (!entitySearchArray.includes(entityName)) {
+      updateFilters({
         ...filters,
-        entitySearch: [...filters.entitySearch, entityName],
+        entitySearch: [...entitySearchArray, entityName],
       });
     }
     setEntitySearchInput('');
@@ -66,19 +75,20 @@ const entitySuggestions = availableEntities
 
   // Handle entity remove
   const handleRemoveEntity = (entityName) => {
-    onFiltersChange({
+    updateFilters({
       ...filters,
-      entitySearch: filters.entitySearch.filter(e => e !== entityName),
+      entitySearch: (filters.entitySearch || []).filter(e => e !== entityName),
     });
   };
 
   // Handle word search add
   const handleAddWord = () => {
     const word = wordSearchInput.trim();
-    if (word && !filters.wordSearch.includes(word)) {
-      onFiltersChange({
+    const wordSearchArray = filters.wordSearch || [];
+    if (word && !wordSearchArray.includes(word)) {
+      updateFilters({
         ...filters,
-        wordSearch: [...filters.wordSearch, word],
+        wordSearch: [...wordSearchArray, word],
       });
     }
     setWordSearchInput('');
@@ -86,19 +96,20 @@ const entitySuggestions = availableEntities
 
   // Handle word remove
   const handleRemoveWord = (word) => {
-    onFiltersChange({
+    updateFilters({
       ...filters,
-      wordSearch: filters.wordSearch.filter(w => w !== word),
+      wordSearch: (filters.wordSearch || []).filter(w => w !== word),
     });
   };
 
   // Handle exclusion add
   const handleAddExclusion = () => {
     const word = exclusionInput.trim();
-    if (word && !filters.wordExclusions.includes(word)) {
-      onFiltersChange({
+    const exclusionsArray = filters.wordExclusions || [];
+    if (word && !exclusionsArray.includes(word)) {
+      updateFilters({
         ...filters,
-        wordExclusions: [...filters.wordExclusions, word],
+        wordExclusions: [...exclusionsArray, word],
       });
     }
     setExclusionInput('');
@@ -106,15 +117,15 @@ const entitySuggestions = availableEntities
 
   // Handle exclusion remove
   const handleRemoveExclusion = (word) => {
-    onFiltersChange({
+    updateFilters({
       ...filters,
-      wordExclusions: filters.wordExclusions.filter(w => w !== word),
+      wordExclusions: (filters.wordExclusions || []).filter(w => w !== word),
     });
   };
 
   // Handle results per segment change
   const handleResultsPerSegmentChange = (value) => {
-    onFiltersChange({
+    updateFilters({
       ...filters,
       resultsPerSegment: parseInt(value),
     });
@@ -122,7 +133,7 @@ const entitySuggestions = availableEntities
 
   // Handle min score change
   const handleMinScoreChange = (value) => {
-    onFiltersChange({
+    updateFilters({
       ...filters,
       minCompositeScore: parseInt(value),
     });
@@ -130,7 +141,7 @@ const entitySuggestions = availableEntities
 
   // Clear all filters
   const handleClearAll = () => {
-    onFiltersChange({
+    updateFilters({
       spoilageMax: 0.15,
       entitySearch: [],
       wordSearch: [],
@@ -143,11 +154,15 @@ const entitySuggestions = availableEntities
   // Check if any filters are active
   const hasActiveFilters = 
     filters.spoilageMax !== 0.15 ||
-    filters.entitySearch.length > 0 ||
-    filters.wordSearch.length > 0 ||
-    filters.wordExclusions.length > 0 ||
+    (filters.entitySearch || []).length > 0 ||
+    (filters.wordSearch || []).length > 0 ||
+    (filters.wordExclusions || []).length > 0 ||
     filters.minCompositeScore > 0 ||
     filters.resultsPerSegment !== 100;
+
+  const entitySearchArray = filters.entitySearch || [];
+  const wordSearchArray = filters.wordSearch || [];
+  const exclusionsArray = filters.wordExclusions || [];
 
   return (
     <div className="border border-gray-200 rounded-lg bg-white overflow-hidden">
@@ -161,9 +176,9 @@ const entitySuggestions = availableEntities
           {hasActiveFilters && (
             <span className="px-2 py-0.5 text-xs bg-blue-100 text-blue-700 rounded-full">
               {[
-                filters.entitySearch.length > 0 && filters.entitySearch.length,
-                filters.wordSearch.length > 0 && filters.wordSearch.length,
-                filters.wordExclusions.length > 0 && filters.wordExclusions.length,
+                entitySearchArray.length > 0 && entitySearchArray.length,
+                wordSearchArray.length > 0 && wordSearchArray.length,
+                exclusionsArray.length > 0 && exclusionsArray.length,
               ].filter(Boolean).length} active
             </span>
           )}
@@ -245,17 +260,17 @@ const entitySuggestions = availableEntities
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
               Entity Search
-              {filters.entitySearch.length > 0 && (
+              {entitySearchArray.length > 0 && (
                 <span className="ml-2 text-xs text-gray-500">
-                  ({filters.entitySearch.length} selected)
+                  ({entitySearchArray.length} selected)
                 </span>
               )}
             </label>
 
             {/* Selected Entities */}
-            {filters.entitySearch.length > 0 && (
+            {entitySearchArray.length > 0 && (
               <div className="flex flex-wrap gap-2 mb-3">
-                {filters.entitySearch.map((entity) => (
+                {entitySearchArray.map((entity) => (
                   <span
                     key={entity}
                     className="inline-flex items-center gap-1 px-3 py-1 text-sm bg-blue-100 text-blue-700 rounded-full"
@@ -327,17 +342,17 @@ const entitySuggestions = availableEntities
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
               Word Search
-              {filters.wordSearch.length > 0 && (
+              {wordSearchArray.length > 0 && (
                 <span className="ml-2 text-xs text-gray-500">
-                  ({filters.wordSearch.length} words)
+                  ({wordSearchArray.length} words)
                 </span>
               )}
             </label>
 
             {/* Selected Words */}
-            {filters.wordSearch.length > 0 && (
+            {wordSearchArray.length > 0 && (
               <div className="flex flex-wrap gap-2 mb-3">
-                {filters.wordSearch.map((word) => (
+                {wordSearchArray.map((word) => (
                   <span
                     key={word}
                     className="inline-flex items-center gap-1 px-3 py-1 text-sm bg-green-100 text-green-700 rounded-full"
@@ -396,17 +411,17 @@ const entitySuggestions = availableEntities
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
               Exclude Words
-              {filters.wordExclusions.length > 0 && (
+              {exclusionsArray.length > 0 && (
                 <span className="ml-2 text-xs text-gray-500">
-                  ({filters.wordExclusions.length} excluded)
+                  ({exclusionsArray.length} excluded)
                 </span>
               )}
             </label>
 
             {/* Selected Exclusions */}
-            {filters.wordExclusions.length > 0 && (
+            {exclusionsArray.length > 0 && (
               <div className="flex flex-wrap gap-2 mb-3">
-                {filters.wordExclusions.map((word) => (
+                {exclusionsArray.map((word) => (
                   <span
                     key={word}
                     className="inline-flex items-center gap-1 px-3 py-1 text-sm bg-red-100 text-red-700 rounded-full"
@@ -538,14 +553,14 @@ const entitySuggestions = availableEntities
                     {filters.spoilageMax !== 0.15 && (
                       <li>• Spoilage: {Math.round(filters.spoilageMax * 100)}%</li>
                     )}
-                    {filters.entitySearch.length > 0 && (
-                      <li>• Entities: {filters.entitySearch.join(', ')}</li>
+                    {entitySearchArray.length > 0 && (
+                      <li>• Entities: {entitySearchArray.join(', ')}</li>
                     )}
-                    {filters.wordSearch.length > 0 && (
-                      <li>• Contains: {filters.wordSearch.join(', ')}</li>
+                    {wordSearchArray.length > 0 && (
+                      <li>• Contains: {wordSearchArray.join(', ')}</li>
                     )}
-                    {filters.wordExclusions.length > 0 && (
-                      <li>• Excludes: {filters.wordExclusions.join(', ')}</li>
+                    {exclusionsArray.length > 0 && (
+                      <li>• Excludes: {exclusionsArray.join(', ')}</li>
                     )}
                     {filters.minCompositeScore > 0 && (
                       <li>• Min score: {filters.minCompositeScore}</li>
@@ -562,25 +577,6 @@ const entitySuggestions = availableEntities
       )}
     </div>
   );
-};
-
-FilterPanel.propTypes = {
-  filters: PropTypes.shape({
-    spoilageMax: PropTypes.number,
-    entitySearch: PropTypes.arrayOf(PropTypes.string),
-    wordSearch: PropTypes.arrayOf(PropTypes.string),
-    wordExclusions: PropTypes.arrayOf(PropTypes.string),
-    resultsPerSegment: PropTypes.number,
-    minCompositeScore: PropTypes.number,
-  }),
-  onFiltersChange: PropTypes.func.isRequired,
-  availableEntities: PropTypes.arrayOf(PropTypes.shape({
-    id: PropTypes.number,
-    name: PropTypes.string,
-    name_variants: PropTypes.arrayOf(PropTypes.string),
-  })),
-  isExpanded: PropTypes.bool,
-  onToggleExpand: PropTypes.func,
 };
 
 export default FilterPanel;

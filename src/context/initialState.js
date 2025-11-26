@@ -91,67 +91,21 @@ export const INITIAL_STATE = {
   },
 
   // ==================== RESULTS STATE ====================
-  results: {
-    // All decoded patterns from current analysis
+  results:  {
     patterns: [],
-    // Example: [
-    //   {
-    //     id: 789,
-    //     segmentId: 3,
-    //     segmentText: 'The tragicall historie...',
-    //     decodedPattern: 'Whitgift tortured Roger Manwood...',
-    //     cipherMethod: 'anagram',
-    //     scores: {
-    //       composite: 94,
-    //       entity: 92,
-    //       linguistic: 87,
-    //       statistical: 96,
-    //       spoilage: 97
-    //     },
-    //     spoilagePct: 3.2,
-    //     entitiesDetected: [...],
-    //     themes: ['persecution', 'torture'],
-    //     transformationLog: [...]
-    //   }
-    // ]
-
-    // Filtered patterns (after applying filters)
-    filteredPatterns: null, // null means no filtering active
-
-    // Result view configuration
-    sortBy: 'confidence', // 'confidence' | 'entity_score' | 'spoilage' | 'method'
-    sortOrder: 'desc', // 'asc' | 'desc'
-    
-    // Active filters for results view
-    filters: {
-      minConfidence: 0,
-      maxConfidence: 100,
-      methods: [], // Empty = all methods shown
-      entities: [], // Empty = all entities shown
-      sortBy: 'confidence',
-      sortOrder: 'desc',
-    },
-    
-    // Legacy alias
-    activeFilters: {
-      minConfidence: 0,
-      maxConfidence: 100,
-      methods: [],
-      entities: [],
-    },
-
-    // Selected patterns (for batch operations)
-    selectedPatterns: [], // Array of pattern IDs
-
-    // Expanded pattern (showing transformation log)
+    filteredPatterns: [],
+    selectedPatterns: [],
     expandedPatternId: null,
-
-    // Selected pattern details for modal
     selectedPatternDetails: null,
-
-    // Export state
+    sortBy: 'composite_score',
+    sortOrder: 'desc',
+    activeFilters: {
+      lastJobId: null  // ✅ Add this
+    },
     isExporting: false,
+    lastJobId: null  // ✅ Add this too for redundancy
   },
+  
 
   // ==================== LIBRARY STATE ====================
   library: {

@@ -1,9 +1,14 @@
-// components/ViewModeToggle.jsx
+// AnalyzeView/ViewModeToggle.jsx
 
 import React from 'react';
-import PropTypes from 'prop-types';
+import { useAppState, ACTIONS } from '../context/AppContext';
 
-const ViewModeToggle = ({ selectedMode, onModeChange }) => {
+const ViewModeToggle = () => {
+  const { state, dispatch } = useAppState();
+  
+  // Get current view mode from state
+  const selectedMode = state.analyze.viewMode || 'standard';
+
   const modes = [
     {
       id: 'standard',
@@ -48,6 +53,35 @@ const ViewModeToggle = ({ selectedMode, onModeChange }) => {
   ];
 
   const selectedModeData = modes.find(m => m.id === selectedMode);
+
+  // Handle mode change
+  const handleModeChange = (modeId) => {
+    dispatch({
+      type: ACTIONS.SET_VIEW_MODE,
+      payload: modeId,
+    });
+
+    // Show notification
+    const mode = modes.find(m => m.id === modeId);
+    if (mode) {
+      dispatch({
+        type: ACTIONS.ADD_NOTIFICATION,
+        payload: {
+          type: 'info',
+          message: `View mode changed to: ${mode.name}`,
+          duration: 2000,
+        },
+      });
+    }
+
+    // Update settings to persist preference
+    dispatch({
+      type: ACTIONS.UPDATE_SETTINGS,
+      payload: {
+        defaultViewMode: modeId,
+      },
+    });
+  };
 
   const getColorClasses = (color, isSelected) => {
     const colorMap = {
@@ -109,7 +143,7 @@ const ViewModeToggle = ({ selectedMode, onModeChange }) => {
           return (
             <button
               key={mode.id}
-              onClick={() => onModeChange(mode.id)}
+              onClick={() => handleModeChange(mode.id)}
               className={`
                 w-full text-left p-3 rounded-lg border-2 transition-all
                 ${colorClasses.border}
@@ -225,11 +259,6 @@ const ViewModeToggle = ({ selectedMode, onModeChange }) => {
       )}
     </div>
   );
-};
-
-ViewModeToggle.propTypes = {
-  selectedMode: PropTypes.oneOf(['standard', 'juvenilia', 'alt_cipher', 'show_all']).isRequired,
-  onModeChange: PropTypes.func.isRequired,
 };
 
 export default ViewModeToggle;

@@ -1,18 +1,36 @@
-// components/ResultCard.jsx
+// ResultsView/ResultCard.jsx
 
 import React, { useState } from 'react';
 import PropTypes from 'prop-types';
+import { useAppState, ACTIONS } from '../context/AppContext';
 
 const ResultCard = ({
   pattern,
-  isSelected = false,
-  onSelect,
-  onViewDetails,
   showCheckbox = false,
   showSegmentInfo = true,
   compact = false,
 }) => {
+  const { state, dispatch } = useAppState();
   const [isExpanded, setIsExpanded] = useState(false);
+
+  // Check if this pattern is selected
+  const isSelected = state.results.selectedPatterns?.includes(pattern.id) || false;
+
+  // Handle selection toggle
+  const handleSelect = () => {
+    dispatch({
+      type: ACTIONS.TOGGLE_PATTERN_SELECTION,
+      payload: pattern.id,
+    });
+  };
+
+  // Handle view details
+  const handleViewDetails = () => {
+    dispatch({
+      type: ACTIONS.VIEW_PATTERN_DETAILS,
+      payload: pattern,
+    });
+  };
 
   // Get confidence level based on composite score
   const getConfidenceLevel = (score) => {
@@ -45,8 +63,40 @@ const ResultCard = ({
     return text.substring(0, maxLength) + '...';
   };
 
-  const confidence = getConfidenceLevel(pattern.scores?.composite || 0);
-  const hasRobertaMatch = pattern.roberta_validation?.is_coherent;
+  // Extract decoded pattern text from various possible structures
+  const getDecodedText = () => {
+    if (pattern.decoded_pattern) return pattern.decoded_pattern;
+    if (pattern.best_candidate?.decoded_text) return pattern.best_candidate.decoded_text;
+    if (pattern.candidates?.[0]?.decoded_text) return pattern.candidates[0].decoded_text;
+    return 'No decoded text available';
+  };
+
+  // Extract method from various possible structures
+  const getMethod = () => {
+    if (pattern.decoding_method) return pattern.decoding_method;
+    if (pattern.best_candidate?.method) return pattern.best_candidate.method;
+    if (pattern.candidates?.[0]?.method) return pattern.candidates[0].method;
+    return 'unknown';
+  };
+
+  // Extract entity matches from various possible structures
+  const getEntityMatches = () => {
+    if (pattern.entity_matches) return pattern.entity_matches;
+    if (pattern.entities_detected) return pattern.entities_detected;
+    if (pattern.best_candidate?.entities) return pattern.best_candidate.entities;
+    return [];
+  };
+
+  // Check for RoBERTa/coherence validation
+  const hasRobertaMatch = 
+    pattern.roberta_validation?.is_coherent || 
+    pattern.best_candidate?.is_credible ||
+    false;
+
+  const confidence = getConfidenceLevel(pattern.scores?.composite || pattern.composite_score || 0);
+  const decodedText = getDecodedText();
+  const method = getMethod();
+  const entityMatches = getEntityMatches();
 
   return (
     <div
@@ -58,7 +108,7 @@ const ResultCard = ({
         }
         ${compact ? 'p-3' : 'p-4'}
       `}
-      onClick={() => !showCheckbox && onViewDetails?.(pattern)}
+      onClick={() => !showCheckbox && handleViewDetails()}
     >
       <div className="space-y-3">
         {/* Header Row */}
@@ -72,7 +122,7 @@ const ResultCard = ({
                   checked={isSelected}
                   onChange={(e) => {
                     e.stopPropagation();
-                    onSelect?.(pattern);
+                    handleSelect();
                   }}
                   className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
                 />
@@ -85,11 +135,11 @@ const ResultCard = ({
               <div className="mb-2">
                 <p className={`${compact ? 'text-sm' : 'text-base'} font-medium text-gray-900 break-words`}>
                   {isExpanded || compact
-                    ? pattern.decoded_pattern
-                    : truncateText(pattern.decoded_pattern, 150)
+                    ? decodedText
+                    : truncateText(decodedText, 150)
                   }
                 </p>
-                {!compact && pattern.decoded_pattern?.length > 150 && (
+                {!compact && decodedText.length > 150 && (
                   <button
                     onClick={(e) => {
                       e.stopPropagation();
@@ -109,45 +159,52 @@ const ResultCard = ({
                   <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4" />
                   </svg>
-                  {getMethodName(pattern.decoding_method)}
+                  {getMethodName(method)}
                 </span>
 
-                {/* Roberta Match */}
+                {/* Roberta/Credible Match */}
                 {hasRobertaMatch && (
                   <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-green-100 text-green-700 rounded font-medium">
-                    ⭐ Coherent
+                    ⭐ Credible
+                  </span>
+                )}
+
+                {/* Encoded Status */}
+                {pattern.is_encoded && (
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-blue-100 text-blue-700 rounded font-medium">
+                    🔐 Encoded
                   </span>
                 )}
 
                 {/* Segment Info */}
-                {showSegmentInfo && pattern.segment_id && (
+                {showSegmentInfo && (pattern.segment_id || pattern.section_id) && (
                   <span className="text-gray-500">
-                    Segment {pattern.segment_id}
+                    {pattern.section_name || `Segment ${pattern.segment_id || pattern.section_id}`}
                   </span>
                 )}
 
                 {/* Entities Count */}
-                {pattern.entity_matches && pattern.entity_matches.length > 0 && (
+                {entityMatches.length > 0 && (
                   <span className="text-gray-500">
-                    {pattern.entity_matches.length} entit{pattern.entity_matches.length === 1 ? 'y' : 'ies'}
+                    {entityMatches.length} entit{entityMatches.length === 1 ? 'y' : 'ies'}
                   </span>
                 )}
               </div>
 
               {/* Entity Tags (if present and not compact) */}
-              {!compact && pattern.entity_matches && pattern.entity_matches.length > 0 && (
+              {!compact && entityMatches.length > 0 && (
                 <div className="flex flex-wrap gap-1 mt-2">
-                  {pattern.entity_matches.slice(0, 5).map((entity, index) => (
+                  {entityMatches.slice(0, 5).map((entity, index) => (
                     <span
                       key={index}
                       className="px-2 py-0.5 text-xs bg-blue-100 text-blue-700 rounded"
                     >
-                      {entity.name}
+                      {entity.name || entity}
                     </span>
                   ))}
-                  {pattern.entity_matches.length > 5 && (
+                  {entityMatches.length > 5 && (
                     <span className="px-2 py-0.5 text-xs bg-gray-100 text-gray-600 rounded">
-                      +{pattern.entity_matches.length - 5} more
+                      +{entityMatches.length - 5} more
                     </span>
                   )}
                 </div>
@@ -162,7 +219,7 @@ const ResultCard = ({
             `}>
               <div className="text-center">
                 <div className={`text-lg font-bold ${confidence.textColor}`}>
-                  {Math.round(pattern.scores?.composite || 0)}
+                  {Math.round(pattern.scores?.composite || pattern.composite_score || 0)}
                 </div>
                 <div className={`text-xs ${confidence.textColor}`}>
                   {confidence.label}
@@ -204,7 +261,23 @@ const ResultCard = ({
                 <button
                   onClick={(e) => {
                     e.stopPropagation();
-                    onViewDetails?.(pattern);
+                    dispatch({
+                      type: ACTIONS.SET_SELECTED_SEGMENT,
+                      payload: pattern
+                    });
+                    dispatch({
+                      type: ACTIONS.TOGGLE_MODAL,
+                      payload: { modal: 'segmentCandidates', isOpen: true }
+                    });
+                  }}
+                  className="text-xs text-purple-600 hover:text-purple-700 font-medium"
+                >
+                  All Candidates ({pattern.candidates?.length || 0})
+                </button>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleViewDetails();
                   }}
                   className="text-xs text-blue-600 hover:text-blue-700 font-medium"
                 >
@@ -226,7 +299,7 @@ const ResultCard = ({
             <button
               onClick={(e) => {
                 e.stopPropagation();
-                onViewDetails?.(pattern);
+                handleViewDetails();
               }}
               className="text-blue-600 hover:text-blue-700 font-medium"
             >
@@ -241,26 +314,34 @@ const ResultCard = ({
 
 ResultCard.propTypes = {
   pattern: PropTypes.shape({
+    id: PropTypes.oneOfType([PropTypes.string, PropTypes.number]).isRequired,
     decoded_pattern: PropTypes.string,
     decoding_method: PropTypes.string,
     segment_id: PropTypes.oneOfType([PropTypes.string, PropTypes.number]),
+    section_id: PropTypes.oneOfType([PropTypes.string, PropTypes.number]),
+    section_name: PropTypes.string,
+    is_encoded: PropTypes.bool,
     scores: PropTypes.shape({
       composite: PropTypes.number,
       entity_score: PropTypes.number,
       linguistic_score: PropTypes.number,
       statistical_score: PropTypes.number,
     }),
+    composite_score: PropTypes.number,
     spoilage_ratio: PropTypes.number,
-    entity_matches: PropTypes.arrayOf(PropTypes.shape({
-      name: PropTypes.string,
-    })),
+    entity_matches: PropTypes.array,
+    entities_detected: PropTypes.array,
+    best_candidate: PropTypes.shape({
+      decoded_text: PropTypes.string,
+      method: PropTypes.string,
+      is_credible: PropTypes.bool,
+      entities: PropTypes.array,
+    }),
+    candidates: PropTypes.array,
     roberta_validation: PropTypes.shape({
       is_coherent: PropTypes.bool,
     }),
   }).isRequired,
-  isSelected: PropTypes.bool,
-  onSelect: PropTypes.func,
-  onViewDetails: PropTypes.func,
   showCheckbox: PropTypes.bool,
   showSegmentInfo: PropTypes.bool,
   compact: PropTypes.bool,

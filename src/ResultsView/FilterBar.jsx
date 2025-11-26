@@ -1,32 +1,98 @@
-// components/FilterBar.jsx
+// ResultsView/FilterBar.jsx
 
-import React, { useState } from 'react';
-import PropTypes from 'prop-types';
+import React, { useState, useMemo } from 'react';
+import { useAppState, ACTIONS } from '../context/AppContext';
 
-const FilterBar = ({
-  filters = {
-    minScore: 0,
-    maxScore: 100,
-    methods: [],
-    entities: [],
-    robertaOnly: false,
-    highConfidenceOnly: false,
-  },
-  onFiltersChange,
-  availableMethods = [],
-  availableEntities = [],
-  resultCount = 0,
-  filteredCount = 0,
-}) => {
+const FilterBar = () => {
+const { state, dispatch } = useAppState();
   const [showMethodsDropdown, setShowMethodsDropdown] = useState(false);
   const [showEntitiesDropdown, setShowEntitiesDropdown] = useState(false);
 
+  const filters = useMemo(() => {
+    const activeFilters = state.results?.activeFilters || {};
+    return {
+      minScore: activeFilters.minScore || 0,
+      maxScore: activeFilters.maxScore !== undefined ? activeFilters.maxScore : 100,
+      methods: activeFilters.methods || [],
+      entities: activeFilters.entities || [],
+      highConfidenceOnly: activeFilters.highConfidenceOnly || false,
+    };
+  }, [state.results?.activeFilters]);
+
+
+  // SAFELY get available options from state with defaults
+  const availableMethods = useMemo(() => {
+    return state.settings?.methods || [];
+  }, [state.settings?.methods]);
+  const availableEntities = useMemo(() => {
+    return state.library?.entities || [];
+  }, [state.library?.entities]);
+  const resultCount = useMemo(() => {
+    return state.results?.patterns?.length || 0;
+  }, [state.results?.patterns?.length]);
+
+  // Filter results based on active filters
+  const filteredPatterns = useMemo(() => {
+    // Safety check: ensure patterns exist and is an array
+    if (!state.results?.patterns || !Array.isArray(state.results.patterns)) {
+      console.warn('FilterBar: No patterns array available');
+      return [];
+    }
+    
+    let filtered = [...state.results.patterns];
+
+    // Score range filter
+    if (filters.minScore > 0) {
+      filtered = filtered.filter(p => (p.scores?.composite || 0) >= filters.minScore);
+    }
+    if (filters.maxScore < 100) {
+      filtered = filtered.filter(p => (p.scores?.composite || 0) <= filters.maxScore);
+    }
+
+    // Methods filter - ADD SAFETY CHECK
+    if (filters.methods && Array.isArray(filters.methods) && filters.methods.length > 0) {
+      filtered = filtered.filter(p => {
+        const patternMethods = p.best_candidate?.method || p.method;
+        if (!patternMethods) return false;
+        const methodArray = Array.isArray(patternMethods) ? patternMethods : [patternMethods];
+        return methodArray.some(m => filters.methods.includes(m));
+      });
+    }
+
+    // Entities filter - ADD SAFETY CHECK
+    if (filters.entities && Array.isArray(filters.entities) && filters.entities.length > 0) {
+      filtered = filtered.filter(p => {
+        const entities = p.entities_detected || [];
+        return entities.some(e => filters.entities.includes(e.name || e));
+      });
+    }
+
+    // High confidence filter
+    if (filters.highConfidenceOnly) {
+      filtered = filtered.filter(p => (p.scores?.composite || 0) >= 70);
+    }
+
+    return filtered;
+  }, [state.results?.patterns, filters]);
+
+    const filteredCount = useMemo(() => {
+      return filteredPatterns.length;
+    }, [filteredPatterns.length]);
+
+
+  // Handle filter changes
+  const updateFilters = (updates) => {
+    dispatch({
+      type: ACTIONS.UPDATE_RESULT_FILTERS,
+      payload: updates,
+    });
+  };
+
   // Handle score range change
   const handleScoreChange = (type, value) => {
-    const newValue = parseInt(value);
-    onFiltersChange({
-      ...filters,
-      [type]: newValue,
+    const newValue = parseInt(value) || 0;
+    updateFilters({
+      [type]: Math.max(0, Math.min(100, newValue)),
     });
   };
 
@@ -36,10 +102,7 @@ const FilterBar = ({
       ? filters.methods.filter(m => m !== methodId)
       : [...filters.methods, methodId];
     
-    onFiltersChange({
-      ...filters,
-      methods: newMethods,
-    });
+    updateFilters({ methods: newMethods });
   };
 
   // Handle entity toggle
@@ -48,28 +111,23 @@ const FilterBar = ({
       ? filters.entities.filter(e => e !== entityName)
       : [...filters.entities, entityName];
     
-    onFiltersChange({
-      ...filters,
-      entities: newEntities,
-    });
+    updateFilters({ entities: newEntities });
   };
 
   // Handle quick filter toggles
   const handleQuickFilter = (filterName) => {
-    onFiltersChange({
-      ...filters,
+    updateFilters({
       [filterName]: !filters[filterName],
     });
   };
 
   // Clear all filters
   const handleClearAll = () => {
-    onFiltersChange({
+    updateFilters({
       minScore: 0,
       maxScore: 100,
       methods: [],
       entities: [],
-      robertaOnly: false,
       highConfidenceOnly: false,
     });
   };
@@ -78,9 +136,8 @@ const FilterBar = ({
   const hasActiveFilters = 
     filters.minScore > 0 ||
     filters.maxScore < 100 ||
-    filters.methods.length > 0 ||
-    filters.entities.length > 0 ||
-    filters.robertaOnly ||
+    (Array.isArray(filters.methods) && filters.methods.length > 0) ||
+    (Array.isArray(filters.entities) && filters.entities.length > 0) ||
     filters.highConfidenceOnly;
 
   // Get method display name
@@ -129,146 +186,150 @@ const FilterBar = ({
             </div>
 
             {/* Methods Filter */}
-            <div className="relative">
-              <button
-                onClick={() => {
-                  setShowMethodsDropdown(!showMethodsDropdown);
-                  setShowEntitiesDropdown(false);
-                }}
-                className={`
-                  flex items-center gap-2 px-3 py-1.5 text-sm rounded-lg border transition-colors
-                  ${filters.methods.length > 0
-                    ? 'border-blue-500 bg-blue-50 text-blue-700'
-                    : 'border-gray-300 text-gray-700 hover:bg-gray-50'
-                  }
-                `}
-              >
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
-                </svg>
-                <span>Methods</span>
-                {filters.methods.length > 0 && (
-                  <span className="px-1.5 py-0.5 text-xs bg-blue-600 text-white rounded-full">
-                    {filters.methods.length}
-                  </span>
-                )}
-                <svg className={`w-4 h-4 transition-transform ${showMethodsDropdown ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                </svg>
-              </button>
+            {availableMethods.length > 0 && (
+              <div className="relative">
+                <button
+                  onClick={() => {
+                    setShowMethodsDropdown(!showMethodsDropdown);
+                    setShowEntitiesDropdown(false);
+                  }}
+                  className={`
+                    flex items-center gap-2 px-3 py-1.5 text-sm rounded-lg border transition-colors
+                    ${filters.methods.length > 0
+                      ? 'border-blue-500 bg-blue-50 text-blue-700'
+                      : 'border-gray-300 text-gray-700 hover:bg-gray-50'
+                    }
+                  `}
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
+                  </svg>
+                  <span>Methods</span>
+                  {filters.methods.length > 0 && (
+                    <span className="px-1.5 py-0.5 text-xs bg-blue-600 text-white rounded-full">
+                      {filters.methods.length}
+                    </span>
+                  )}
+                  <svg className={`w-4 h-4 transition-transform ${showMethodsDropdown ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                  </svg>
+                </button>
 
-              {/* Methods Dropdown */}
-              {showMethodsDropdown && (
-                <>
-                  <div
-                    className="fixed inset-0 z-10"
-                    onClick={() => setShowMethodsDropdown(false)}
-                  />
-                  <div className="absolute top-full left-0 mt-1 w-64 bg-white border border-gray-200 rounded-lg shadow-lg z-20 max-h-80 overflow-y-auto">
-                    <div className="p-2">
-                      <div className="flex items-center justify-between mb-2 pb-2 border-b border-gray-200">
-                        <span className="text-xs font-medium text-gray-600">Filter by method</span>
-                        {filters.methods.length > 0 && (
-                          <button
-                            onClick={() => onFiltersChange({ ...filters, methods: [] })}
-                            className="text-xs text-blue-600 hover:text-blue-700"
+                {/* Methods Dropdown */}
+                {showMethodsDropdown && (
+                  <>
+                    <div
+                      className="fixed inset-0 z-10"
+                      onClick={() => setShowMethodsDropdown(false)}
+                    />
+                    <div className="absolute top-full left-0 mt-1 w-64 bg-white border border-gray-200 rounded-lg shadow-lg z-20 max-h-80 overflow-y-auto">
+                      <div className="p-2">
+                        <div className="flex items-center justify-between mb-2 pb-2 border-b border-gray-200">
+                          <span className="text-xs font-medium text-gray-600">Filter by method</span>
+                          {filters.methods.length > 0 && (
+                            <button
+                              onClick={() => updateFilters({ methods: [] })}
+                              className="text-xs text-blue-600 hover:text-blue-700"
+                            >
+                              Clear
+                            </button>
+                          )}
+                        </div>
+                        {availableMethods.map((method) => (
+                          <label
+                            key={method.id}
+                            className="flex items-center gap-2 px-2 py-1.5 hover:bg-gray-50 rounded cursor-pointer"
                           >
-                            Clear
-                          </button>
-                        )}
+                            <input
+                              type="checkbox"
+                              checked={filters.methods.includes(method.id)}
+                              onChange={() => handleMethodToggle(method.id)}
+                              className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                            />
+                            <span className="text-sm text-gray-700">
+                              {getMethodName(method.id)}
+                            </span>
+                          </label>
+                        ))}
                       </div>
-                      {availableMethods.map((method) => (
-                        <label
-                          key={method.id}
-                          className="flex items-center gap-2 px-2 py-1.5 hover:bg-gray-50 rounded cursor-pointer"
-                        >
-                          <input
-                            type="checkbox"
-                            checked={filters.methods.includes(method.id)}
-                            onChange={() => handleMethodToggle(method.id)}
-                            className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
-                          />
-                          <span className="text-sm text-gray-700">
-                            {getMethodName(method.id)}
-                          </span>
-                        </label>
-                      ))}
                     </div>
-                  </div>
-                </>
-              )}
-            </div>
+                  </>
+                )}
+              </div>
+            )}
 
             {/* Entities Filter */}
-            <div className="relative">
-              <button
-                onClick={() => {
-                  setShowEntitiesDropdown(!showEntitiesDropdown);
-                  setShowMethodsDropdown(false);
-                }}
-                className={`
-                  flex items-center gap-2 px-3 py-1.5 text-sm rounded-lg border transition-colors
-                  ${filters.entities.length > 0
-                    ? 'border-blue-500 bg-blue-50 text-blue-700'
-                    : 'border-gray-300 text-gray-700 hover:bg-gray-50'
-                  }
-                `}
-              >
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-                </svg>
-                <span>Entities</span>
-                {filters.entities.length > 0 && (
-                  <span className="px-1.5 py-0.5 text-xs bg-blue-600 text-white rounded-full">
-                    {filters.entities.length}
-                  </span>
-                )}
-                <svg className={`w-4 h-4 transition-transform ${showEntitiesDropdown ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                </svg>
-              </button>
+            {availableEntities.length > 0 && (
+              <div className="relative">
+                <button
+                  onClick={() => {
+                    setShowEntitiesDropdown(!showEntitiesDropdown);
+                    setShowMethodsDropdown(false);
+                  }}
+                  className={`
+                    flex items-center gap-2 px-3 py-1.5 text-sm rounded-lg border transition-colors
+                    ${filters.entities.length > 0
+                      ? 'border-blue-500 bg-blue-50 text-blue-700'
+                      : 'border-gray-300 text-gray-700 hover:bg-gray-50'
+                    }
+                  `}
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                  </svg>
+                  <span>Entities</span>
+                  {filters.entities.length > 0 && (
+                    <span className="px-1.5 py-0.5 text-xs bg-blue-600 text-white rounded-full">
+                      {filters.entities.length}
+                    </span>
+                  )}
+                  <svg className={`w-4 h-4 transition-transform ${showEntitiesDropdown ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                  </svg>
+                </button>
 
-              {/* Entities Dropdown */}
-              {showEntitiesDropdown && (
-                <>
-                  <div
-                    className="fixed inset-0 z-10"
-                    onClick={() => setShowEntitiesDropdown(false)}
-                  />
-                  <div className="absolute top-full left-0 mt-1 w-64 bg-white border border-gray-200 rounded-lg shadow-lg z-20 max-h-80 overflow-y-auto">
-                    <div className="p-2">
-                      <div className="flex items-center justify-between mb-2 pb-2 border-b border-gray-200">
-                        <span className="text-xs font-medium text-gray-600">Filter by entity</span>
-                        {filters.entities.length > 0 && (
-                          <button
-                            onClick={() => onFiltersChange({ ...filters, entities: [] })}
-                            className="text-xs text-blue-600 hover:text-blue-700"
+                {/* Entities Dropdown */}
+                {showEntitiesDropdown && (
+                  <>
+                    <div
+                      className="fixed inset-0 z-10"
+                      onClick={() => setShowEntitiesDropdown(false)}
+                    />
+                    <div className="absolute top-full left-0 mt-1 w-64 bg-white border border-gray-200 rounded-lg shadow-lg z-20 max-h-80 overflow-y-auto">
+                      <div className="p-2">
+                        <div className="flex items-center justify-between mb-2 pb-2 border-b border-gray-200">
+                          <span className="text-xs font-medium text-gray-600">Filter by entity</span>
+                          {filters.entities.length > 0 && (
+                            <button
+                              onClick={() => updateFilters({ entities: [] })}
+                              className="text-xs text-blue-600 hover:text-blue-700"
+                            >
+                              Clear
+                            </button>
+                          )}
+                        </div>
+                        {availableEntities.slice(0, 50).map((entity) => (
+                          <label
+                            key={entity.id || entity.name}
+                            className="flex items-center gap-2 px-2 py-1.5 hover:bg-gray-50 rounded cursor-pointer"
                           >
-                            Clear
-                          </button>
-                        )}
+                            <input
+                              type="checkbox"
+                              checked={filters.entities.includes(entity.name)}
+                              onChange={() => handleEntityToggle(entity.name)}
+                              className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                            />
+                            <span className="text-sm text-gray-700">
+                              {entity.name}
+                            </span>
+                          </label>
+                        ))}
                       </div>
-                      {availableEntities.slice(0, 20).map((entity) => (
-                        <label
-                          key={entity.id}
-                          className="flex items-center gap-2 px-2 py-1.5 hover:bg-gray-50 rounded cursor-pointer"
-                        >
-                          <input
-                            type="checkbox"
-                            checked={filters.entities.includes(entity.name)}
-                            onChange={() => handleEntityToggle(entity.name)}
-                            className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
-                          />
-                          <span className="text-sm text-gray-700">
-                            {entity.name}
-                          </span>
-                        </label>
-                      ))}
                     </div>
-                  </div>
-                </>
-              )}
-            </div>
+                  </>
+                )}
+              </div>
+            )}
 
             {/* Divider */}
             <div className="h-6 w-px bg-gray-300" />
@@ -289,8 +350,6 @@ const FilterBar = ({
               </svg>
               <span>High Confidence</span>
             </button>
-
-
           </div>
 
           {/* Right: Clear & Results Count */}
@@ -394,35 +453,11 @@ const FilterBar = ({
                 </button>
               </span>
             )}
-
-         
           </div>
         </div>
       )}
     </div>
   );
-};
-
-FilterBar.propTypes = {
-  filters: PropTypes.shape({
-    minScore: PropTypes.number,
-    maxScore: PropTypes.number,
-    methods: PropTypes.arrayOf(PropTypes.string),
-    entities: PropTypes.arrayOf(PropTypes.string),
-    robertaOnly: PropTypes.bool,
-    highConfidenceOnly: PropTypes.bool,
-  }),
-  onFiltersChange: PropTypes.func.isRequired,
-  availableMethods: PropTypes.arrayOf(PropTypes.shape({
-    id: PropTypes.string,
-    name: PropTypes.string,
-  })),
-  availableEntities: PropTypes.arrayOf(PropTypes.shape({
-    id: PropTypes.number,
-    name: PropTypes.string,
-  })),
-  resultCount: PropTypes.number,
-  filteredCount: PropTypes.number,
 };
 
 export default FilterBar;

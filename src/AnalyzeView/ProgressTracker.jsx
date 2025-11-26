@@ -1,31 +1,39 @@
-// components/ProgressTracker.jsx
+// src/AnalyzeView/ProgressTracker.jsx
 
 import React, { useState, useEffect } from 'react';
-import PropTypes from 'prop-types';
+import { useAppState, ACTIONS } from '../context/AppContext';
 
 const ProgressTracker = ({
-  status = 'idle', // 'idle' | 'queued' | 'processing' | 'completed' | 'failed' | 'paused'
-  progress = 0, // 0-100
-  currentSegment = 0,
-  totalSegments = 0,
-  startTime = null,
-  estimatedTimeRemaining = null,
-  resultsSoFar = 0,
-  highConfidenceCount = 0,
-  onPause,
-  onResume,
-  onCancel,
   showDetails = false,
-  latestResults = [],
 }) => {
+  const { state, dispatch } = useAppState();
+  const job = state.analyze.currentJob;
+  
   const [elapsedTime, setElapsedTime] = useState(0);
   const [showDetailModal, setShowDetailModal] = useState(false);
+
+  // If no job, don't render
+  if (!job) {
+    return null;
+  }
+
+  const {
+    status = 'idle',
+    progress = 0,
+    currentSegment = 0,
+    totalSegments = 0,
+    startTime = null,
+    estimatedTime = null,
+    resultsCount = 0,
+    highConfidenceCount = 0,
+    latestResults = [],
+  } = job;
 
   // Calculate elapsed time
   useEffect(() => {
     if (status === 'processing' && startTime) {
       const interval = setInterval(() => {
-        const elapsed = Math.floor((Date.now() - new Date(startTime).getTime()) / 1000);
+        const elapsed = Math.floor((Date.now() - startTime) / 1000);
         setElapsedTime(elapsed);
       }, 1000);
 
@@ -38,6 +46,23 @@ const ProgressTracker = ({
     const mins = Math.floor(seconds / 60);
     const secs = seconds % 60;
     return `${mins}:${secs.toString().padStart(2, '0')}`;
+  };
+
+  // Handle pause
+  const handlePause = () => {
+    dispatch({ type: ACTIONS.PAUSE_ANALYSIS });
+  };
+
+  // Handle resume
+  const handleResume = () => {
+    dispatch({ type: ACTIONS.RESUME_ANALYSIS });
+  };
+
+  // Handle cancel
+  const handleCancel = () => {
+    if (window.confirm('Are you sure you want to cancel this analysis?')) {
+      dispatch({ type: ACTIONS.CANCEL_ANALYSIS });
+    }
   };
 
   // Get status color and icon
@@ -132,12 +157,12 @@ const ProgressTracker = ({
   };
 
   const statusDisplay = getStatusDisplay();
-  const canPause = status === 'processing' && onPause;
-  const canResume = status === 'paused' && onResume;
-  const canCancel = (status === 'processing' || status === 'paused' || status === 'queued') && onCancel;
+  const canPause = status === 'processing';
+  const canResume = status === 'paused';
+  const canCancel = status === 'processing' || status === 'paused' || status === 'queued';
 
   if (status === 'idle') {
-    return null; // Don't show anything when idle
+    return null;
   }
 
   return (
@@ -172,7 +197,7 @@ const ProgressTracker = ({
             <div className="flex items-center gap-2">
               {canPause && (
                 <button
-                  onClick={onPause}
+                  onClick={handlePause}
                   className="p-2 text-gray-600 hover:text-gray-900 hover:bg-white rounded-lg transition-colors"
                   title="Pause (Space)"
                 >
@@ -184,7 +209,7 @@ const ProgressTracker = ({
 
               {canResume && (
                 <button
-                  onClick={onResume}
+                  onClick={handleResume}
                   className="p-2 text-gray-600 hover:text-gray-900 hover:bg-white rounded-lg transition-colors"
                   title="Resume (Space)"
                 >
@@ -197,7 +222,7 @@ const ProgressTracker = ({
 
               {canCancel && (
                 <button
-                  onClick={onCancel}
+                  onClick={handleCancel}
                   className="p-2 text-gray-600 hover:text-red-600 hover:bg-white rounded-lg transition-colors"
                   title="Cancel (Esc)"
                 >
@@ -260,17 +285,17 @@ const ProgressTracker = ({
                     ⏱️ {formatTime(elapsedTime)}
                   </span>
                 )}
-                {estimatedTimeRemaining && status === 'processing' && (
+                {estimatedTime && status === 'processing' && (
                   <span className="text-gray-500">
-                    ~{formatTime(Math.floor(estimatedTimeRemaining / 1000))} remaining
+                    ~{formatTime(Math.floor(estimatedTime / 1000))} remaining
                   </span>
                 )}
               </div>
 
-              {resultsSoFar > 0 && (
+              {resultsCount > 0 && (
                 <div className="flex items-center gap-3">
                   <span>
-                    {resultsSoFar} patterns found
+                    {resultsCount} patterns found
                   </span>
                   {highConfidenceCount > 0 && (
                     <span className="text-green-600 font-medium">
@@ -308,7 +333,7 @@ const ProgressTracker = ({
             <div className="flex items-center justify-between">
               <div className="space-y-1">
                 <p className="text-sm font-medium text-gray-900">
-                  {resultsSoFar} patterns found
+                  {resultsCount} patterns found
                 </p>
                 {highConfidenceCount > 0 && (
                   <p className="text-sm text-green-600">
@@ -320,7 +345,7 @@ const ProgressTracker = ({
                 </p>
               </div>
               <button
-                onClick={() => {}} // Navigate to results
+                onClick={() => dispatch({ type: ACTIONS.SET_ACTIVE_VIEW, payload: 'results' })}
                 className="px-4 py-2 text-sm font-medium text-white bg-green-600 hover:bg-green-700 rounded-lg transition-colors"
               >
                 View Results →
@@ -409,11 +434,11 @@ const ProgressTracker = ({
                           {formatTime(elapsedTime)}
                         </p>
                       </div>
-                      {estimatedTimeRemaining && (
+                      {estimatedTime && (
                         <div className="bg-gray-50 rounded-lg p-3">
                           <p className="text-xs text-gray-600">Remaining</p>
                           <p className="text-lg font-semibold text-gray-900">
-                            ~{formatTime(Math.floor(estimatedTimeRemaining / 1000))}
+                            ~{formatTime(Math.floor(estimatedTime / 1000))}
                           </p>
                         </div>
                       )}
@@ -421,13 +446,13 @@ const ProgressTracker = ({
                   </div>
 
                   {/* Results */}
-                  {resultsSoFar > 0 && (
+                  {resultsCount > 0 && (
                     <div>
                       <h4 className="text-sm font-medium text-gray-700 mb-2">Results Found</h4>
                       <div className="grid grid-cols-2 gap-3">
                         <div className="bg-blue-50 rounded-lg p-3">
                           <p className="text-xs text-blue-600">Total Patterns</p>
-                          <p className="text-lg font-semibold text-blue-900">{resultsSoFar}</p>
+                          <p className="text-lg font-semibold text-blue-900">{resultsCount}</p>
                         </div>
                         <div className="bg-green-50 rounded-lg p-3">
                           <p className="text-xs text-green-600">High Confidence</p>
@@ -470,7 +495,7 @@ const ProgressTracker = ({
                 {canPause && (
                   <button
                     onClick={() => {
-                      onPause();
+                      handlePause();
                       setShowDetailModal(false);
                     }}
                     className="px-4 py-2 text-sm font-medium text-gray-700 hover:text-gray-900 hover:bg-gray-200 rounded-lg transition-colors"
@@ -481,7 +506,7 @@ const ProgressTracker = ({
                 {canResume && (
                   <button
                     onClick={() => {
-                      onResume();
+                      handleResume();
                       setShowDetailModal(false);
                     }}
                     className="px-4 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors"
@@ -492,10 +517,8 @@ const ProgressTracker = ({
                 {canCancel && (
                   <button
                     onClick={() => {
-                      if (window.confirm('Are you sure you want to cancel this analysis?')) {
-                        onCancel();
-                        setShowDetailModal(false);
-                      }
+                      handleCancel();
+                      setShowDetailModal(false);
                     }}
                     className="px-4 py-2 text-sm font-medium text-red-600 hover:text-red-700 hover:bg-red-50 rounded-lg transition-colors"
                   >
@@ -515,22 +538,6 @@ const ProgressTracker = ({
       )}
     </>
   );
-};
-
-ProgressTracker.propTypes = {
-  status: PropTypes.oneOf(['idle', 'queued', 'processing', 'completed', 'failed', 'paused']),
-  progress: PropTypes.number,
-  currentSegment: PropTypes.number,
-  totalSegments: PropTypes.number,
-  startTime: PropTypes.string,
-  estimatedTimeRemaining: PropTypes.number,
-  resultsSoFar: PropTypes.number,
-  highConfidenceCount: PropTypes.number,
-  onPause: PropTypes.func,
-  onResume: PropTypes.func,
-  onCancel: PropTypes.func,
-  showDetails: PropTypes.bool,
-  latestResults: PropTypes.array,
 };
 
 export default ProgressTracker;

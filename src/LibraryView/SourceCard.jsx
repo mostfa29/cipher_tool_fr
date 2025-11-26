@@ -1,18 +1,20 @@
-// components/SourceCard.jsx
+// LibraryView/SourceCard.jsx
 
 import React, { useState } from 'react';
 import PropTypes from 'prop-types';
+import { useAppState, ACTIONS } from '../context/AppContext';
 
 const SourceCard = ({
   source,
-  onEdit,
-  onDelete,
-  onAnalyze,
-  isAnalyzing = false,
   showActions = true,
+  compact = false,
 }) => {
+  const { state, dispatch, loadWork } = useAppState();
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [isExpanded, setIsExpanded] = useState(false);
+
+  // Check if currently analyzing
+  const isAnalyzing = state.ui.isLoading?.work === source.id;
 
   // Format date
   const formatDate = (dateString) => {
@@ -99,10 +101,10 @@ const SourceCard = ({
 
   // Calculate text statistics
   const getTextStats = () => {
-    const text = source.content || '';
+    const text = source.content || source.text || '';
     const wordCount = text.trim().split(/\s+/).filter(Boolean).length;
     const charCount = text.length;
-    const lineCount = text.split('\n').filter(Boolean).length;
+    const lineCount = source.line_count || text.split('\n').filter(Boolean).length;
     
     return { wordCount, charCount, lineCount };
   };
@@ -111,21 +113,69 @@ const SourceCard = ({
   const eraDisplay = getEraDisplay(source.era);
   const stats = getTextStats();
 
+  // Handle edit
+  const handleEdit = () => {
+    dispatch({
+      type: ACTIONS.ADD_NOTIFICATION,
+      payload: {
+        type: 'info',
+        message: 'Edit functionality coming soon',
+      },
+    });
+  };
+
   // Handle delete
-  const handleDelete = () => {
-    onDelete?.(source);
-    setShowDeleteConfirm(false);
+  const handleDelete = async () => {
+    try {
+      // Call API to delete source
+      // await api.deleteSource(source.id);
+      
+      dispatch({ type: ACTIONS.DELETE_SOURCE, payload: source.id });
+      dispatch({
+        type: ACTIONS.ADD_NOTIFICATION,
+        payload: {
+          type: 'success',
+          message: `Deleted "${source.title || 'source'}"`,
+        },
+      });
+      setShowDeleteConfirm(false);
+    } catch (error) {
+      dispatch({
+        type: ACTIONS.ADD_NOTIFICATION,
+        payload: {
+          type: 'error',
+          message: `Failed to delete: ${error.message}`,
+        },
+      });
+    }
+  };
+
+  // Handle analyze/load work
+  const handleAnalyze = async () => {
+    try {
+      // Load the work into workspace
+      await loadWork(source.author_folder || source.author, source.id);
+      
+      // Navigate to workspace
+      dispatch({ type: ACTIONS.SET_ACTIVE_VIEW, payload: 'workspace' });
+    } catch (error) {
+      // Error handling is done in loadWork
+      console.error('Failed to load work:', error);
+    }
   };
 
   return (
     <>
-      <div className="border border-gray-200 rounded-lg bg-white hover:shadow-md transition-all">
+      <div className={`
+        border border-gray-200 rounded-lg bg-white hover:shadow-md transition-all
+        ${compact ? 'p-3' : ''}
+      `}>
         {/* Header */}
-        <div className="px-4 py-3 border-b border-gray-200">
+        <div className={`${compact ? '' : 'px-4 py-3 border-b border-gray-200'}`}>
           <div className="flex items-start justify-between gap-3">
             <div className="flex-1 min-w-0">
               {/* Title */}
-              <h3 className="text-lg font-semibold text-gray-900 truncate">
+              <h3 className={`font-semibold text-gray-900 truncate ${compact ? 'text-base' : 'text-lg'}`}>
                 {source.title || 'Untitled Source'}
               </h3>
               
@@ -154,10 +204,10 @@ const SourceCard = ({
                   </span>
                 )}
 
-                {/* Date */}
-                {source.year && (
+                {/* Date/Year */}
+                {(source.year || source.date) && (
                   <span className="text-xs text-gray-600">
-                    ({source.year})
+                    ({source.year || source.date})
                   </span>
                 )}
               </div>
@@ -167,7 +217,7 @@ const SourceCard = ({
             {showActions && (
               <div className="flex items-center gap-2">
                 <button
-                  onClick={() => onEdit?.(source)}
+                  onClick={handleEdit}
                   className="p-2 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors"
                   title="Edit source"
                 >
@@ -191,78 +241,85 @@ const SourceCard = ({
         </div>
 
         {/* Content Preview */}
-        <div className="px-4 py-3">
-          {/* Description */}
-          {source.description && (
-            <p className="text-sm text-gray-600 mb-3">
-              {source.description}
-            </p>
-          )}
+        {!compact && (
+          <div className="px-4 py-3">
+            {/* Description */}
+            {source.description && (
+              <p className="text-sm text-gray-600 mb-3">
+                {source.description}
+              </p>
+            )}
 
-          {/* Text Preview */}
-          <div className="bg-gray-50 border border-gray-200 rounded-lg p-3">
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-xs font-medium text-gray-700">Text Preview</span>
-              {source.content && source.content.length > 200 && (
-                <button
-                  onClick={() => setIsExpanded(!isExpanded)}
-                  className="text-xs text-blue-600 hover:text-blue-700 font-medium"
-                >
-                  {isExpanded ? 'Show less' : 'Show more'}
-                </button>
-              )}
-            </div>
-            <p className="text-sm text-gray-900 font-mono whitespace-pre-wrap break-words">
-              {isExpanded 
-                ? source.content 
-                : truncateText(source.content, 200)
-              }
-            </p>
-          </div>
+            {/* Text Preview */}
+            {(source.content || source.text) && (
+              <div className="bg-gray-50 border border-gray-200 rounded-lg p-3">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-xs font-medium text-gray-700">Text Preview</span>
+                  {(source.content || source.text).length > 200 && (
+                    <button
+                      onClick={() => setIsExpanded(!isExpanded)}
+                      className="text-xs text-blue-600 hover:text-blue-700 font-medium"
+                    >
+                      {isExpanded ? 'Show less' : 'Show more'}
+                    </button>
+                  )}
+                </div>
+                <p className="text-sm text-gray-900 font-mono whitespace-pre-wrap break-words">
+                  {isExpanded 
+                    ? (source.content || source.text)
+                    : truncateText(source.content || source.text, 200)
+                  }
+                </p>
+              </div>
+            )}
 
-          {/* Statistics */}
-          <div className="flex items-center gap-4 mt-3 text-xs text-gray-600">
-            <div className="flex items-center gap-1">
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 8h10M7 12h4m1 8l-4-4H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-3l-4 4z" />
-              </svg>
-              <span>{stats.wordCount.toLocaleString()} words</span>
-            </div>
-            <div className="flex items-center gap-1">
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-              </svg>
-              <span>{stats.charCount.toLocaleString()} chars</span>
-            </div>
-            <div className="flex items-center gap-1">
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
-              </svg>
-              <span>{stats.lineCount.toLocaleString()} lines</span>
+            {/* Statistics */}
+            <div className="flex items-center gap-4 mt-3 text-xs text-gray-600">
+              <div className="flex items-center gap-1">
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 8h10M7 12h4m1 8l-4-4H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-3l-4 4z" />
+                </svg>
+                <span>{stats.wordCount.toLocaleString()} words</span>
+              </div>
+              <div className="flex items-center gap-1">
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                </svg>
+                <span>{stats.charCount.toLocaleString()} chars</span>
+              </div>
+              <div className="flex items-center gap-1">
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+                </svg>
+                <span>{stats.lineCount.toLocaleString()} lines</span>
+              </div>
             </div>
           </div>
-        </div>
+        )}
 
         {/* Footer */}
-        <div className="px-4 py-3 border-t border-gray-200 bg-gray-50">
+        <div className={`${compact ? 'mt-3' : 'px-4 py-3 border-t border-gray-200 bg-gray-50'}`}>
           <div className="flex items-center justify-between">
-            <div className="text-xs text-gray-500">
-              {source.created_at && (
-                <span>Added {formatDate(source.created_at)}</span>
-              )}
-              {source.last_analyzed && (
-                <span className="ml-3">
-                  Last analyzed {formatDate(source.last_analyzed)}
-                </span>
-              )}
-            </div>
+            {!compact && (
+              <div className="text-xs text-gray-500">
+                {source.created_at && (
+                  <span>Added {formatDate(source.created_at)}</span>
+                )}
+                {source.last_analyzed && (
+                  <span className="ml-3">
+                    Last analyzed {formatDate(source.last_analyzed)}
+                  </span>
+                )}
+              </div>
+            )}
 
-            {/* Analyze Button */}
+            {/* Open/Analyze Button */}
             <button
-              onClick={() => onAnalyze?.(source)}
+              onClick={handleAnalyze}
               disabled={isAnalyzing}
               className={`
                 flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg transition-colors
+                ${compact ? 'w-full justify-center' : ''}
                 ${isAnalyzing
                   ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
                   : 'bg-blue-600 text-white hover:bg-blue-700'
@@ -275,14 +332,15 @@ const SourceCard = ({
                     <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                     <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
                   </svg>
-                  <span>Analyzing...</span>
+                  <span>Loading...</span>
                 </>
               ) : (
                 <>
                   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
                   </svg>
-                  <span>Analyze</span>
+                  <span>{compact ? 'Open' : 'Open in Workspace'}</span>
                 </>
               )}
             </button>
@@ -350,22 +408,23 @@ const SourceCard = ({
 
 SourceCard.propTypes = {
   source: PropTypes.shape({
-    id: PropTypes.oneOfType([PropTypes.string, PropTypes.number]),
+    id: PropTypes.oneOfType([PropTypes.string, PropTypes.number]).isRequired,
     title: PropTypes.string,
     author: PropTypes.string,
+    author_folder: PropTypes.string,
     type: PropTypes.string,
     era: PropTypes.string,
     year: PropTypes.oneOfType([PropTypes.string, PropTypes.number]),
+    date: PropTypes.string,
     description: PropTypes.string,
     content: PropTypes.string,
+    text: PropTypes.string,
+    line_count: PropTypes.number,
     created_at: PropTypes.string,
     last_analyzed: PropTypes.string,
   }).isRequired,
-  onEdit: PropTypes.func,
-  onDelete: PropTypes.func,
-  onAnalyze: PropTypes.func,
-  isAnalyzing: PropTypes.bool,
   showActions: PropTypes.bool,
+  compact: PropTypes.bool,
 };
 
 export default SourceCard;

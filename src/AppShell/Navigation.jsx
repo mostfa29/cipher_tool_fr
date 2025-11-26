@@ -100,7 +100,7 @@ const Navigation = ({
           <div className="flex items-center gap-2">
             <span className="text-2xl">📊</span>
             <span className="text-lg font-semibold text-gray-900">
-              Cipher Tool
+              Merlin
             </span>
           </div>
 
@@ -245,7 +245,7 @@ const Navigation = ({
         <div className="flex items-center gap-2">
           <span className="text-2xl">📊</span>
           <span className="text-base font-semibold text-gray-900">
-            Cipher Tool
+            Merlin
           </span>
         </div>
 

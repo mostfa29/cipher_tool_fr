@@ -1,14 +1,15 @@
-// components/MethodSelector.jsx
+// src/AnalyzeView/MethodSelector.jsx
 
 import React, { useState } from 'react';
-import PropTypes from 'prop-types';
+import { useAppState, ACTIONS } from '../context/AppContext';
 
 const MethodSelector = ({
-  selectedMethods = [],
-  onMethodsChange,
   showSuccessRates = true,
   allowMultiple = true,
 }) => {
+  const { state, dispatch } = useAppState();
+  const selectedMethods = state.analyze.selectedMethods || [];
+  
   const [expandedMethod, setExpandedMethod] = useState(null);
 
   // Cipher methods with metadata (based on research)
@@ -152,36 +153,43 @@ const MethodSelector = ({
 
   // Handle method toggle
   const handleToggle = (methodId) => {
+    let newMethods;
+    
     if (!allowMultiple) {
-      onMethodsChange([methodId]);
-      return;
-    }
-
-    if (selectedMethods.includes(methodId)) {
-      onMethodsChange(selectedMethods.filter(id => id !== methodId));
+      newMethods = [methodId];
     } else {
-      onMethodsChange([...selectedMethods, methodId]);
+      if (selectedMethods.includes(methodId)) {
+        newMethods = selectedMethods.filter(id => id !== methodId);
+      } else {
+        newMethods = [...selectedMethods, methodId];
+      }
     }
+    
+    dispatch({ type: ACTIONS.SET_SELECTED_METHODS, payload: newMethods });
   };
 
   // Quick selection presets
   const handleSelectPreset = (preset) => {
+    let newMethods;
+    
     switch (preset) {
       case 'top4':
-        onMethodsChange(['unusual_spelling', 'nomenclator', 'anagram', 'caesar_rot13']);
+        newMethods = ['unusual_spelling', 'nomenclator', 'anagram', 'caesar_rot13'];
         break;
       case 'all-enabled':
-        onMethodsChange(enabledMethods.map(m => m.id));
+        newMethods = enabledMethods.map(m => m.id);
         break;
       case 'all':
-        onMethodsChange(methods.map(m => m.id));
+        newMethods = methods.map(m => m.id);
         break;
       case 'none':
-        onMethodsChange([]);
+        newMethods = [];
         break;
       default:
-        break;
+        return;
     }
+    
+    dispatch({ type: ACTIONS.SET_SELECTED_METHODS, payload: newMethods });
   };
 
   // Get computational cost color
@@ -454,12 +462,6 @@ const MethodCard = ({
                   </span>
                 </div>
               )}
-              {/* <div className="flex items-center gap-1">
-                <span className="text-gray-600">Cost:</span>
-                <span className={`px-1.5 py-0.5 rounded text-xs font-medium ${getCostColor(method.computationalCost)}`}>
-                  {method.computationalCost}
-                </span>
-              </div> */}
               <div className="flex items-center gap-1">
                 <span className="text-gray-600">Type:</span>
                 <span className="text-gray-900">
@@ -513,35 +515,6 @@ const MethodCard = ({
       )}
     </div>
   );
-};
-
-MethodSelector.propTypes = {
-  selectedMethods: PropTypes.arrayOf(PropTypes.string),
-  onMethodsChange: PropTypes.func.isRequired,
-  showSuccessRates: PropTypes.bool,
-  allowMultiple: PropTypes.bool,
-};
-
-MethodCard.propTypes = {
-  method: PropTypes.shape({
-    id: PropTypes.string.isRequired,
-    name: PropTypes.string.isRequired,
-    category: PropTypes.string.isRequired,
-    successRate: PropTypes.number.isRequired,
-    icon: PropTypes.string.isRequired,
-    computationalCost: PropTypes.string.isRequired,
-    description: PropTypes.string.isRequired,
-    example: PropTypes.string.isRequired,
-    historicalBasis: PropTypes.string.isRequired,
-    whenToUse: PropTypes.string.isRequired,
-    enabled: PropTypes.bool.isRequired,
-  }).isRequired,
-  isSelected: PropTypes.bool.isRequired,
-  isExpanded: PropTypes.bool.isRequired,
-  onToggle: PropTypes.func.isRequired,
-  onExpand: PropTypes.func.isRequired,
-  showSuccessRates: PropTypes.bool.isRequired,
-  getCostColor: PropTypes.func.isRequired,
 };
 
 export default MethodSelector;

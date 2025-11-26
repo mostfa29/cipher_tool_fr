@@ -2,19 +2,19 @@
 
 import React, { useState, useRef, useCallback, useMemo } from 'react';
 import { Virtuoso } from 'react-virtuoso';
+import { useAppState, ACTIONS } from '../context/AppContext';
 
 const VirtualizedTextDisplay = ({ 
-  source, 
-  boundaries = [],
-  onBoundariesChange,
   segmentationMode = false,
   highlightSegments = true,
   showMetadata = true 
 }) => {
+  const { state, dispatch } = useAppState();
+  const { activeSource, boundaries, selectedSegmentId, hoveredLineIndex } = state.workspace;
+  
   const [fontSize, setFontSize] = useState('medium');
   const [showLineNumbers, setShowLineNumbers] = useState(true);
   const [hoveredBoundary, setHoveredBoundary] = useState(null);
-  const [selectedSegmentId, setSelectedSegmentId] = useState(null);
   const [editingSegment, setEditingSegment] = useState(null);
   const virtuosoRef = useRef(null);
 
@@ -26,13 +26,13 @@ const VirtualizedTextDisplay = ({
   };
 
   const lines = useMemo(() => 
-    source?.text?.split('\n') || [], 
-    [source?.text]
+    activeSource?.lines || [], 
+    [activeSource]
   );
 
   // Generate segments from boundaries
   const segments = useMemo(() => {
-    if (boundaries.length < 2) return [];
+    if (!boundaries || boundaries.length < 2) return [];
     
     return boundaries.slice(0, -1).map((start, i) => {
       const end = boundaries[i + 1];
@@ -41,19 +41,23 @@ const VirtualizedTextDisplay = ({
       const letterCount = text.replace(/[^a-zA-Z]/g, '').length;
       
       return {
-        id: i + 1,
+        id: `segment_${start}_${end}`,
+        numericId: i + 1,
         startLine: start,
         endLine: end,
         lineCount: end - start,
         text,
+        lines: segmentLines,
         letterCount,
-        isValid: letterCount >= 100 && letterCount <= 500
+        isValid: letterCount >= 5 && letterCount <= 1000
       };
     });
   }, [boundaries, lines]);
 
   // Toggle boundary at line index
   const toggleBoundary = useCallback((lineIndex) => {
+    if (!boundaries) return;
+    
     const idx = boundaries.indexOf(lineIndex);
     let newBoundaries;
     
@@ -66,9 +70,9 @@ const VirtualizedTextDisplay = ({
     }
     
     if (newBoundaries) {
-      onBoundariesChange(newBoundaries);
+      dispatch({ type: ACTIONS.SET_BOUNDARIES, payload: newBoundaries });
     }
-  }, [boundaries, onBoundariesChange]);
+  }, [boundaries, dispatch]);
 
   // Get segment for line
   const getSegmentForLine = useCallback((lineIndex) => {
@@ -78,32 +82,31 @@ const VirtualizedTextDisplay = ({
   }, [segments]);
 
   // Delete segment
-  const deleteSegment = useCallback((segmentId) => {
-    const segment = segments.find(s => s.id === segmentId);
-    if (!segment) return;
+  const deleteSegment = useCallback((segment) => {
+    if (!segment || !boundaries) return;
     
     const newBoundaries = boundaries.filter(b => b !== segment.endLine);
-    onBoundariesChange(newBoundaries);
-    setSelectedSegmentId(null);
-  }, [segments, boundaries, onBoundariesChange]);
+    dispatch({ type: ACTIONS.SET_BOUNDARIES, payload: newBoundaries });
+    dispatch({ type: ACTIONS.SET_SELECTED_SEGMENT, payload: null });
+  }, [boundaries, dispatch]);
 
   // Split segment at line
-  const splitSegment = useCallback((segmentId, lineIndex) => {
-    const segment = segments.find(s => s.id === segmentId);
-    if (!segment || lineIndex <= segment.startLine || lineIndex >= segment.endLine) return;
+  const splitSegment = useCallback((segment, lineIndex) => {
+    if (!segment || !boundaries) return;
+    if (lineIndex <= segment.startLine || lineIndex >= segment.endLine) return;
     
     const newBoundaries = [...boundaries, lineIndex].sort((a, b) => a - b);
-    onBoundariesChange(newBoundaries);
-  }, [segments, boundaries, onBoundariesChange]);
+    dispatch({ type: ACTIONS.SET_BOUNDARIES, payload: newBoundaries });
+  }, [boundaries, dispatch]);
 
   // Merge segment with next
-  const mergeWithNext = useCallback((segmentId) => {
-    const segment = segments.find(s => s.id === segmentId);
-    if (!segment || segmentId === segments.length) return;
+  const mergeWithNext = useCallback((segment) => {
+    if (!segment || !boundaries) return;
+    if (segment.numericId === segments.length) return;
     
     const newBoundaries = boundaries.filter(b => b !== segment.endLine);
-    onBoundariesChange(newBoundaries);
-  }, [segments, boundaries, onBoundariesChange]);
+    dispatch({ type: ACTIONS.SET_BOUNDARIES, payload: newBoundaries });
+  }, [segments, boundaries, dispatch]);
 
   // Scroll to segment
   const scrollToSegment = useCallback((segmentId) => {
@@ -114,17 +117,33 @@ const VirtualizedTextDisplay = ({
         align: 'center',
         behavior: 'smooth'
       });
-      setSelectedSegmentId(segmentId);
+      dispatch({ type: ACTIONS.SET_SELECTED_SEGMENT, payload: segmentId });
     }
-  }, [segments]);
+  }, [segments, dispatch]);
 
   // Copy text
   const handleCopyText = async () => {
-    if (!source?.text) return;
+    if (!activeSource?.text) return;
     try {
-      await navigator.clipboard.writeText(source.text);
+      await navigator.clipboard.writeText(activeSource.text);
+      dispatch({
+        type: ACTIONS.ADD_NOTIFICATION,
+        payload: {
+          type: 'success',
+          message: 'Text copied to clipboard',
+          duration: 2000
+        }
+      });
     } catch (err) {
       console.error('Failed to copy:', err);
+      dispatch({
+        type: ACTIONS.ADD_NOTIFICATION,
+        payload: {
+          type: 'error',
+          message: 'Failed to copy text',
+          duration: 3000
+        }
+      });
     }
   };
 
@@ -141,14 +160,14 @@ const VirtualizedTextDisplay = ({
       'bg-pink-50',
       'bg-indigo-50'
     ];
-    return colors[(segment.id - 1) % colors.length];
+    return colors[(segment.numericId - 1) % colors.length];
   };
 
   // Row renderer
   const rowContent = useCallback((index) => {
     const line = lines[index];
     const segment = getSegmentForLine(index);
-    const hasBoundaryAfter = boundaries.includes(index + 1);
+    const hasBoundaryAfter = boundaries?.includes(index + 1);
     const isFirstInSegment = segment && index === segment.startLine;
     const isLastInSegment = segment && index === segment.endLine - 1;
     const isSelected = segment && segment.id === selectedSegmentId;
@@ -162,7 +181,7 @@ const VirtualizedTextDisplay = ({
           } ${getSegmentColor(segment)}`}>
             <div className="flex items-center gap-2">
               <span className="text-xs font-bold text-gray-700">
-                Segment {segment.id}
+                Segment {segment.numericId}
               </span>
               <span className={`text-xs px-1.5 py-0.5 rounded ${
                 segment.isValid 
@@ -179,7 +198,7 @@ const VirtualizedTextDisplay = ({
             {segmentationMode && (
               <div className="flex items-center gap-1">
                 <button
-                  onClick={() => setEditingSegment(segment.id)}
+                  onClick={() => setEditingSegment(segment)}
                   className="p-1 hover:bg-white rounded transition-colors"
                   title="Edit segment"
                 >
@@ -188,7 +207,7 @@ const VirtualizedTextDisplay = ({
                   </svg>
                 </button>
                 <button
-                  onClick={() => deleteSegment(segment.id)}
+                  onClick={() => deleteSegment(segment)}
                   className="p-1 hover:bg-red-100 rounded transition-colors"
                   title="Delete segment"
                 >
@@ -197,7 +216,10 @@ const VirtualizedTextDisplay = ({
                   </svg>
                 </button>
                 <button
-                  onClick={() => setSelectedSegmentId(isSelected ? null : segment.id)}
+                  onClick={() => dispatch({ 
+                    type: ACTIONS.SET_SELECTED_SEGMENT, 
+                    payload: isSelected ? null : segment.id 
+                  })}
                   className={`p-1 rounded transition-colors ${
                     isSelected ? 'bg-blue-200' : 'hover:bg-white'
                   }`}
@@ -228,7 +250,7 @@ const VirtualizedTextDisplay = ({
           {/* Split button for selected segment */}
           {isSelected && segmentationMode && !isFirstInSegment && !isLastInSegment && (
             <button
-              onClick={() => splitSegment(segment.id, index + 1)}
+              onClick={() => splitSegment(segment, index + 1)}
               className="absolute right-2 top-1/2 transform -translate-y-1/2 px-2 py-1 bg-yellow-500 text-white text-xs rounded hover:bg-yellow-600 transition-colors z-10"
               title="Split segment here"
             >
@@ -281,10 +303,11 @@ const VirtualizedTextDisplay = ({
     getSegmentForLine,
     toggleBoundary,
     deleteSegment,
-    splitSegment
+    splitSegment,
+    dispatch
   ]);
 
-  if (!source) {
+  if (!activeSource) {
     return (
       <div className="bg-white rounded-lg border border-gray-200 p-8 text-center">
         <svg className="w-16 h-16 mx-auto mb-4 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -295,6 +318,8 @@ const VirtualizedTextDisplay = ({
     );
   }
 
+  const currentSegment = selectedSegmentId ? segments.find(s => s.id === selectedSegmentId) : null;
+
   return (
     <div className="bg-white rounded-lg border border-gray-200 shadow-sm overflow-hidden flex flex-col h-full">
       {/* Header */}
@@ -303,14 +328,14 @@ const VirtualizedTextDisplay = ({
           <div className="flex items-start justify-between gap-4">
             <div className="flex-1 min-w-0">
               <h3 className="text-sm font-semibold text-gray-900 truncate">
-                {source.title}
+                {activeSource.title}
               </h3>
               <div className="flex items-center gap-3 mt-1 text-xs text-gray-600">
-                <span>{source.author}</span>
-                {source.publication_year && (
+                <span>{activeSource.author}</span>
+                {activeSource.date && (
                   <>
                     <span className="text-gray-300">•</span>
-                    <span>{source.publication_year}</span>
+                    <span>{activeSource.date}</span>
                   </>
                 )}
               </div>
@@ -358,18 +383,18 @@ const VirtualizedTextDisplay = ({
         </div>
 
         <div className="flex items-center gap-2">
-          {selectedSegmentId && (
+          {currentSegment && (
             <>
               <button
-                onClick={() => mergeWithNext(selectedSegmentId)}
-                disabled={selectedSegmentId === segments.length}
+                onClick={() => mergeWithNext(currentSegment)}
+                disabled={currentSegment.numericId === segments.length}
                 className="px-2 py-1 text-xs font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
                 title="Merge with next segment"
               >
                 🔗 Merge
               </button>
               <button
-                onClick={() => setSelectedSegmentId(null)}
+                onClick={() => dispatch({ type: ACTIONS.SET_SELECTED_SEGMENT, payload: null })}
                 className="px-2 py-1 text-xs font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50"
               >
                 ✕
@@ -410,7 +435,7 @@ const VirtualizedTextDisplay = ({
       {/* Edit Modal */}
       {editingSegment && (
         <EditSegmentModal
-          segment={segments.find(s => s.id === editingSegment)}
+          segment={editingSegment}
           onSave={() => setEditingSegment(null)}
           onCancel={() => setEditingSegment(null)}
         />
@@ -428,7 +453,7 @@ const EditSegmentModal = ({ segment, onSave, onCancel }) => {
       <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full mx-4 max-h-[80vh] flex flex-col">
         <div className="px-6 py-4 border-b border-gray-200">
           <h3 className="text-lg font-semibold text-gray-900">
-            Edit Segment {segment.id}
+            Edit Segment {segment.numericId}
           </h3>
           <p className="text-sm text-gray-600 mt-1">
             Lines {segment.startLine + 1}-{segment.endLine}
