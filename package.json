@@ -10,11 +10,15 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@annotorious/react": "^3.7.19",
+    "@recogito/react-text-annotator": "^3.4.9",
+    "@recogito/text-annotator": "^3.4.9",
     "@tailwindcss/vite": "^4.1.17",
     "lucide-react": "^0.553.0",
+    "overlapping-markup": "^1.0.1",
     "prop-types": "^15.8.1",
-    "react": "^19.2.0",
-    "react-dom": "^19.2.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
     "react-virtuoso": "^4.14.1",
     "react-window": "^2.2.3",
     "tailwindcss": "^4.1.17",
@@ -23,8 +27,8 @@
   },
   "devDependencies": {
     "@eslint/js": "^9.39.1",
-    "@types/react": "^19.2.2",
-    "@types/react-dom": "^19.2.2",
+    "@types/react": "^18.3.11",
+    "@types/react-dom": "^18.3.1",
     "@vitejs/plugin-react": "^5.1.0",
     "eslint": "^9.39.1",
     "eslint-plugin-react-hooks": "^5.2.0",

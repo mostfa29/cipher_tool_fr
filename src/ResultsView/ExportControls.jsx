@@ -1,38 +1,163 @@
-// ResultsView/ExportControls.jsx
+// src/ResultsView/ExportControls.jsx
+// Export controls for cipher analysis results with multiple formats and scopes
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useCallback } from 'react';
 import { useAppState, ACTIONS } from '../context/AppContext';
+import { Download, MoreVertical, X, Loader } from 'lucide-react';
+
+// ============================================================================
+// CONSTANTS
+// ============================================================================
+
+const EXPORT_FORMATS = [
+  {
+    id: 'csv',
+    name: 'CSV',
+    icon: '📊',
+    description: 'Comma-separated values (Excel, Google Sheets)',
+    extension: '.csv',
+    mimeType: 'text/csv',
+  },
+  {
+    id: 'json',
+    name: 'JSON',
+    icon: '📋',
+    description: 'Structured data format (developers)',
+    extension: '.json',
+    mimeType: 'application/json',
+  },
+  {
+    id: 'xlsx',
+    name: 'Excel',
+    icon: '📈',
+    description: 'Microsoft Excel workbook',
+    extension: '.xlsx',
+    mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  },
+  {
+    id: 'txt',
+    name: 'Plain Text',
+    icon: '📄',
+    description: 'Simple text report',
+    extension: '.txt',
+    mimeType: 'text/plain',
+  },
+];
+
+const HIGH_CONFIDENCE_THRESHOLD = 70;
+const ESTIMATED_SIZE_PER_PATTERN = 0.5; // KB
+
+const DEFAULT_EXPORT_CONFIG = {
+  format: 'json',
+  includeTransformationLogs: false,
+  includeScoreBreakdown: true,
+  includeMetadata: true,
+  scope: 'selected',
+};
+
+// ============================================================================
+// MAIN COMPONENT
+// ============================================================================
 
 const ExportControls = () => {
   const { state, dispatch, exportResults } = useAppState();
+  
   const [showExportModal, setShowExportModal] = useState(false);
   const [exportConfig, setExportConfig] = useState({
+    ...DEFAULT_EXPORT_CONFIG,
     format: state.settings?.export?.format || 'json',
     includeTransformationLogs: state.settings?.export?.includeTransformationLogs || false,
-    includeScoreBreakdown: state.settings?.export?.includeScoreBreakdown !== false,
-    includeMetadata: true,
-    scope: 'selected', // 'selected' | 'filtered' | 'all'
   });
 
-  // Get data from state
+  // Extract state data
   const selectedPatterns = state.results.selectedPatterns || [];
   const allPatterns = state.results.patterns || [];
   const isExporting = state.results.isExporting || false;
 
-  // Filter patterns based on active filters
-  const filteredPatterns = useMemo(() => {
-    const filters = state.results.activeFilters || {};
+  // Computed values
+  const filteredPatterns = useFilteredPatterns(allPatterns, state.results.activeFilters);
+  const selectedPatternObjects = useSelectedPatternObjects(allPatterns, selectedPatterns);
+  const exportScopes = useExportScopes(selectedPatternObjects, filteredPatterns, allPatterns);
+  const patternsToExport = usePatternsToExport(
+    exportConfig.scope,
+    selectedPatternObjects,
+    filteredPatterns,
+    allPatterns
+  );
+
+  // Event handlers
+  const handleConfigChange = useCallback((key, value) => {
+    setExportConfig(prev => ({ ...prev, [key]: value }));
+  }, []);
+
+  const handleExport = useHandleExport(
+    patternsToExport,
+    exportConfig,
+    state,
+    dispatch,
+    exportResults,
+    setShowExportModal
+  );
+
+  const handleQuickExport = useHandleQuickExport(
+    selectedPatternObjects,
+    filteredPatterns,
+    exportConfig,
+    setExportConfig,
+    handleExport,
+    dispatch
+  );
+
+  const estimatedFileSize = Math.ceil(patternsToExport.length * ESTIMATED_SIZE_PER_PATTERN);
+
+  return (
+    <>
+      <ExportButtons
+        selectedCount={selectedPatternObjects.length}
+        isExporting={isExporting}
+        hasPatterns={selectedPatternObjects.length > 0 || filteredPatterns.length > 0}
+        allPatternsCount={allPatterns.length}
+        onQuickExport={handleQuickExport}
+        onShowModal={() => setShowExportModal(true)}
+      />
+
+      {showExportModal && (
+        <ExportModal
+          exportConfig={exportConfig}
+          exportScopes={exportScopes}
+          patternsToExport={patternsToExport}
+          estimatedFileSize={estimatedFileSize}
+          isExporting={isExporting}
+          onConfigChange={handleConfigChange}
+          onExport={handleExport}
+          onClose={() => setShowExportModal(false)}
+        />
+      )}
+    </>
+  );
+};
+
+// ============================================================================
+// CUSTOM HOOKS
+// ============================================================================
+
+function useFilteredPatterns(allPatterns, activeFilters) {
+  return useMemo(() => {
+    const filters = activeFilters || {};
     let filtered = [...allPatterns];
 
-    // Apply score range filter
     if (filters.minScore > 0) {
-      filtered = filtered.filter(p => (p.scores?.composite || p.composite_score || 0) >= filters.minScore);
-    }
-    if (filters.maxScore < 100) {
-      filtered = filtered.filter(p => (p.scores?.composite || p.composite_score || 0) <= filters.maxScore);
+      filtered = filtered.filter(p => 
+        (p.scores?.composite || p.composite_score || 0) >= filters.minScore
+      );
     }
 
-    // Apply methods filter
+    if (filters.maxScore < 100) {
+      filtered = filtered.filter(p => 
+        (p.scores?.composite || p.composite_score || 0) <= filters.maxScore
+      );
+    }
+
     if (filters.methods?.length > 0) {
       filtered = filtered.filter(p => {
         const method = p.decoding_method || p.best_candidate?.method || p.method;
@@ -40,7 +165,6 @@ const ExportControls = () => {
       });
     }
 
-    // Apply entities filter
     if (filters.entities?.length > 0) {
       filtered = filtered.filter(p => {
         const entities = p.entity_matches || p.entities_detected || [];
@@ -48,51 +172,24 @@ const ExportControls = () => {
       });
     }
 
-    // Apply high confidence filter
     if (filters.highConfidenceOnly) {
-      filtered = filtered.filter(p => (p.scores?.composite || p.composite_score || 0) >= 70);
+      filtered = filtered.filter(p => 
+        (p.scores?.composite || p.composite_score || 0) >= HIGH_CONFIDENCE_THRESHOLD
+      );
     }
 
     return filtered;
-  }, [allPatterns, state.results.activeFilters]);
+  }, [allPatterns, activeFilters]);
+}
 
-  // Get selected pattern objects
-  const selectedPatternObjects = useMemo(() => {
+function useSelectedPatternObjects(allPatterns, selectedPatterns) {
+  return useMemo(() => {
     return allPatterns.filter(p => selectedPatterns.includes(p.id));
   }, [allPatterns, selectedPatterns]);
+}
 
-  const exportFormats = [
-    {
-      id: 'csv',
-      name: 'CSV',
-      icon: '📊',
-      description: 'Comma-separated values (Excel, Google Sheets)',
-      extension: '.csv',
-    },
-    {
-      id: 'json',
-      name: 'JSON',
-      icon: '📋',
-      description: 'Structured data format (developers)',
-      extension: '.json',
-    },
-    {
-      id: 'xlsx',
-      name: 'Excel',
-      icon: '📈',
-      description: 'Microsoft Excel workbook',
-      extension: '.xlsx',
-    },
-    {
-      id: 'txt',
-      name: 'Plain Text',
-      icon: '📄',
-      description: 'Simple text report',
-      extension: '.txt',
-    },
-  ];
-
-  const exportScopes = [
+function useExportScopes(selectedPatternObjects, filteredPatterns, allPatterns) {
+  return useMemo(() => [
     {
       id: 'selected',
       name: 'Selected Results',
@@ -114,34 +211,22 @@ const ExportControls = () => {
       count: allPatterns.length,
       disabled: allPatterns.length === 0,
     },
-  ];
+  ], [selectedPatternObjects.length, filteredPatterns.length, allPatterns.length]);
+}
 
-  // Handle export configuration change
-  const handleConfigChange = (key, value) => {
-    setExportConfig(prev => ({
-      ...prev,
-      [key]: value,
-    }));
-  };
-
-  // Get patterns to export based on scope
-  const getPatternsToExport = () => {
-    switch (exportConfig.scope) {
-      case 'selected':
-        return selectedPatternObjects;
-      case 'filtered':
-        return filteredPatterns;
-      case 'all':
-        return allPatterns;
-      default:
-        return [];
+function usePatternsToExport(scope, selectedPatternObjects, filteredPatterns, allPatterns) {
+  return useMemo(() => {
+    switch (scope) {
+      case 'selected': return selectedPatternObjects;
+      case 'filtered': return filteredPatterns;
+      case 'all': return allPatterns;
+      default: return [];
     }
-  };
+  }, [scope, selectedPatternObjects, filteredPatterns, allPatterns]);
+}
 
-  // Handle export
-  const handleExport = async () => {
-    const patternsToExport = getPatternsToExport();
-    
+function useHandleExport(patternsToExport, exportConfig, state, dispatch, exportResults, setShowExportModal) {
+  return useCallback(async () => {
     if (patternsToExport.length === 0) {
       dispatch({
         type: ACTIONS.ADD_NOTIFICATION,
@@ -154,16 +239,12 @@ const ExportControls = () => {
     }
 
     try {
-      // Set exporting state
       dispatch({ type: ACTIONS.EXPORT_RESULTS });
 
-      // Call the export function from context
-      // The exportResults function should handle the actual export logic
       if (exportResults) {
         await exportResults(exportConfig.format);
       } else {
-        // Fallback: create export data manually
-        await createExportFile(patternsToExport, exportConfig);
+        await createExportFile(patternsToExport, exportConfig, state);
       }
 
       dispatch({
@@ -185,135 +266,13 @@ const ExportControls = () => {
         },
       });
     } finally {
-      // Reset exporting state
       dispatch({ type: ACTIONS.SET_RESULTS, payload: state.results.patterns });
     }
-  };
+  }, [patternsToExport, exportConfig, state, dispatch, exportResults, setShowExportModal]);
+}
 
-  // Create export file (fallback implementation)
-  const createExportFile = async (patterns, config) => {
-    const currentJob = state.analyze.currentJob;
-    const sourceInfo = state.workspace.currentSource;
-
-    let content;
-    let filename;
-    let mimeType;
-
-    const exportData = {
-      metadata: config.includeMetadata ? {
-        exportDate: new Date().toISOString(),
-        source: sourceInfo?.title || 'Unknown',
-        author: sourceInfo?.author || 'Unknown',
-        analysisDate: currentJob?.startTime ? new Date(currentJob.startTime).toISOString() : null,
-        totalPatterns: patterns.length,
-      } : undefined,
-      patterns: patterns.map(p => ({
-        id: p.id,
-        segment: p.section_name || p.segment_id,
-        isEncoded: p.is_encoded,
-        decodedText: p.decoded_pattern || p.best_candidate?.decoded_text,
-        method: p.decoding_method || p.best_candidate?.method,
-        compositeScore: p.scores?.composite || p.composite_score,
-        ...(config.includeScoreBreakdown ? {
-          entityScore: p.scores?.entity_score,
-          linguisticScore: p.scores?.linguistic_score,
-          statisticalScore: p.scores?.statistical_score,
-          spoilageRatio: p.spoilage_ratio,
-        } : {}),
-        entities: p.entity_matches || p.entities_detected || [],
-        isCredible: p.best_candidate?.is_credible || false,
-        ...(config.includeTransformationLogs ? {
-          transformationLog: p.transformation_log || [],
-        } : {}),
-      })),
-    };
-
-    switch (config.format) {
-      case 'json':
-        content = JSON.stringify(exportData, null, 2);
-        filename = `cipher-analysis-${Date.now()}.json`;
-        mimeType = 'application/json';
-        break;
-
-      case 'csv':
-        const headers = [
-          'ID',
-          'Segment',
-          'Decoded Text',
-          'Method',
-          'Composite Score',
-          ...(config.includeScoreBreakdown ? ['Entity Score', 'Linguistic Score', 'Statistical Score', 'Spoilage Ratio'] : []),
-          'Is Encoded',
-          'Is Credible',
-          'Entities',
-        ];
-        
-        const rows = exportData.patterns.map(p => [
-          p.id,
-          p.segment,
-          `"${(p.decodedText || '').replace(/"/g, '""')}"`,
-          p.method,
-          p.compositeScore || 0,
-          ...(config.includeScoreBreakdown ? [
-            p.entityScore || 0,
-            p.linguisticScore || 0,
-            p.statisticalScore || 0,
-            p.spoilageRatio || 0,
-          ] : []),
-          p.isEncoded ? 'Yes' : 'No',
-          p.isCredible ? 'Yes' : 'No',
-          `"${(p.entities || []).map(e => e.name || e).join(', ')}"`,
-        ]);
-
-        content = [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
-        filename = `cipher-analysis-${Date.now()}.csv`;
-        mimeType = 'text/csv';
-        break;
-
-      case 'txt':
-        const lines = [
-          config.includeMetadata ? `Cipher Analysis Export\n${'='.repeat(50)}\n` : '',
-          config.includeMetadata ? `Source: ${exportData.metadata.source}` : '',
-          config.includeMetadata ? `Author: ${exportData.metadata.author}` : '',
-          config.includeMetadata ? `Export Date: ${new Date(exportData.metadata.exportDate).toLocaleString()}` : '',
-          config.includeMetadata ? `Total Patterns: ${exportData.metadata.totalPatterns}\n` : '',
-          '',
-          ...exportData.patterns.map((p, i) => [
-            `\nPattern ${i + 1}`,
-            '-'.repeat(50),
-            `Segment: ${p.segment}`,
-            `Method: ${p.method}`,
-            `Score: ${p.compositeScore || 0}`,
-            `Is Encoded: ${p.isEncoded ? 'Yes' : 'No'}`,
-            `Is Credible: ${p.isCredible ? 'Yes' : 'No'}`,
-            `\nDecoded Text:\n${p.decodedText || 'N/A'}`,
-            p.entities.length > 0 ? `\nEntities: ${p.entities.map(e => e.name || e).join(', ')}` : '',
-          ].join('\n')),
-        ];
-        
-        content = lines.join('\n');
-        filename = `cipher-analysis-${Date.now()}.txt`;
-        mimeType = 'text/plain';
-        break;
-
-      default:
-        throw new Error(`Unsupported format: ${config.format}`);
-    }
-
-    // Download file
-    const blob = new Blob([content], { type: mimeType });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = filename;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
-  };
-
-  // Quick export (uses saved settings)
-  const handleQuickExport = () => {
+function useHandleQuickExport(selectedPatternObjects, filteredPatterns, exportConfig, setExportConfig, handleExport, dispatch) {
+  return useCallback(() => {
     const config = { ...exportConfig };
     
     if (selectedPatternObjects.length > 0) {
@@ -333,309 +292,502 @@ const ExportControls = () => {
 
     setExportConfig(config);
     handleExport();
+  }, [selectedPatternObjects.length, filteredPatterns.length, exportConfig, setExportConfig, handleExport, dispatch]);
+}
+
+// ============================================================================
+// EXPORT FILE CREATION
+// ============================================================================
+
+async function createExportFile(patterns, config, state) {
+  const currentJob = state.analyze.currentJob;
+  const sourceInfo = state.workspace.currentSource;
+
+  const exportData = buildExportData(patterns, config, currentJob, sourceInfo);
+  const { content, filename, mimeType } = formatExportContent(exportData, config);
+
+  downloadFile(content, filename, mimeType);
+}
+
+function buildExportData(patterns, config, currentJob, sourceInfo) {
+  return {
+    metadata: config.includeMetadata ? {
+      exportDate: new Date().toISOString(),
+      source: sourceInfo?.title || 'Unknown',
+      author: sourceInfo?.author || 'Unknown',
+      analysisDate: currentJob?.startTime ? new Date(currentJob.startTime).toISOString() : null,
+      totalPatterns: patterns.length,
+    } : undefined,
+    patterns: patterns.map(p => ({
+      id: p.id,
+      segment: p.section_name || p.segment_id,
+      isEncoded: p.is_encoded,
+      decodedText: p.decoded_pattern || p.best_candidate?.decoded_text,
+      method: p.decoding_method || p.best_candidate?.method,
+      compositeScore: p.scores?.composite || p.composite_score,
+      ...(config.includeScoreBreakdown ? {
+        entityScore: p.scores?.entity_score,
+        linguisticScore: p.scores?.linguistic_score,
+        statisticalScore: p.scores?.statistical_score,
+        spoilageRatio: p.spoilage_ratio,
+      } : {}),
+      entities: p.entity_matches || p.entities_detected || [],
+      isCredible: p.best_candidate?.is_credible || false,
+      ...(config.includeTransformationLogs ? {
+        transformationLog: p.transformation_log || [],
+      } : {}),
+    })),
   };
+}
 
-  const patternsToExport = getPatternsToExport();
-  const estimatedFileSize = Math.ceil(patternsToExport.length * 0.5); // ~0.5KB per pattern
+function formatExportContent(exportData, config) {
+  const timestamp = Date.now();
+  
+  switch (config.format) {
+    case 'json':
+      return {
+        content: JSON.stringify(exportData, null, 2),
+        filename: `cipher-analysis-${timestamp}.json`,
+        mimeType: 'application/json',
+      };
+    
+    case 'csv':
+      return formatAsCSV(exportData, config, timestamp);
+    
+    case 'txt':
+      return formatAsText(exportData, config, timestamp);
+    
+    default:
+      throw new Error(`Unsupported format: ${config.format}`);
+  }
+}
 
-  return (
-    <>
-      {/* Export Button */}
-      <div className="flex items-center gap-2">
-        {selectedPatternObjects.length > 0 && (
-          <span className="text-sm text-gray-600">
-            {selectedPatternObjects.length} selected
-          </span>
-        )}
-        
-        <button
-          onClick={handleQuickExport}
-          disabled={isExporting || (selectedPatternObjects.length === 0 && filteredPatterns.length === 0)}
-          className={`
-            flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg transition-colors
-            ${isExporting || (selectedPatternObjects.length === 0 && filteredPatterns.length === 0)
-              ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
-              : 'bg-blue-600 text-white hover:bg-blue-700'
-            }
-          `}
-          title="Quick export with saved settings"
-        >
-          {isExporting ? (
-            <>
-              <svg className="animate-spin w-4 h-4" fill="none" viewBox="0 0 24 24">
-                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-              </svg>
-              <span>Exporting...</span>
-            </>
-          ) : (
-            <>
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-              </svg>
-              <span>Export</span>
-            </>
-          )}
-        </button>
+function formatAsCSV(exportData, config, timestamp) {
+  const headers = [
+    'ID',
+    'Segment',
+    'Decoded Text',
+    'Method',
+    'Composite Score',
+    ...(config.includeScoreBreakdown ? [
+      'Entity Score',
+      'Linguistic Score',
+      'Statistical Score',
+      'Spoilage Ratio'
+    ] : []),
+    'Is Encoded',
+    'Is Credible',
+    'Entities',
+  ];
+  
+  const rows = exportData.patterns.map(p => [
+    p.id,
+    p.segment,
+    `"${(p.decodedText || '').replace(/"/g, '""')}"`,
+    p.method,
+    p.compositeScore || 0,
+    ...(config.includeScoreBreakdown ? [
+      p.entityScore || 0,
+      p.linguisticScore || 0,
+      p.statisticalScore || 0,
+      p.spoilageRatio || 0,
+    ] : []),
+    p.isEncoded ? 'Yes' : 'No',
+    p.isCredible ? 'Yes' : 'No',
+    `"${(p.entities || []).map(e => e.name || e).join(', ')}"`,
+  ]);
 
-        <button
-          onClick={() => setShowExportModal(true)}
-          disabled={isExporting || allPatterns.length === 0}
-          className={`
-            p-2 rounded-lg transition-colors
-            ${isExporting || allPatterns.length === 0
-              ? 'text-gray-400 cursor-not-allowed'
-              : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100'
-            }
-          `}
-          title="Export options"
-        >
-          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 5v.01M12 12v.01M12 19v.01M12 6a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2z" />
-          </svg>
-        </button>
-      </div>
+  return {
+    content: [headers.join(','), ...rows.map(r => r.join(','))].join('\n'),
+    filename: `cipher-analysis-${timestamp}.csv`,
+    mimeType: 'text/csv',
+  };
+}
 
-      {/* Export Modal */}
-      {showExportModal && (
+function formatAsText(exportData, config, timestamp) {
+  const lines = [
+    config.includeMetadata ? `Cipher Analysis Export\n${'='.repeat(50)}\n` : '',
+    config.includeMetadata ? `Source: ${exportData.metadata.source}` : '',
+    config.includeMetadata ? `Author: ${exportData.metadata.author}` : '',
+    config.includeMetadata ? `Export Date: ${new Date(exportData.metadata.exportDate).toLocaleString()}` : '',
+    config.includeMetadata ? `Total Patterns: ${exportData.metadata.totalPatterns}\n` : '',
+    '',
+    ...exportData.patterns.map((p, i) => [
+      `\nPattern ${i + 1}`,
+      '-'.repeat(50),
+      `Segment: ${p.segment}`,
+      `Method: ${p.method}`,
+      `Score: ${p.compositeScore || 0}`,
+      `Is Encoded: ${p.isEncoded ? 'Yes' : 'No'}`,
+      `Is Credible: ${p.isCredible ? 'Yes' : 'No'}`,
+      `\nDecoded Text:\n${p.decodedText || 'N/A'}`,
+      p.entities.length > 0 ? `\nEntities: ${p.entities.map(e => e.name || e).join(', ')}` : '',
+    ].join('\n')),
+  ];
+  
+  return {
+    content: lines.join('\n'),
+    filename: `cipher-analysis-${timestamp}.txt`,
+    mimeType: 'text/plain',
+  };
+}
+
+function downloadFile(content, filename, mimeType) {
+  const blob = new Blob([content], { type: mimeType });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(url);
+}
+
+// ============================================================================
+// SUB-COMPONENTS
+// ============================================================================
+
+const ExportButtons = ({
+  selectedCount,
+  isExporting,
+  hasPatterns,
+  allPatternsCount,
+  onQuickExport,
+  onShowModal,
+}) => (
+  <div className="flex items-center gap-2">
+    {selectedCount > 0 && (
+      <span className="text-sm text-gray-600">
+        {selectedCount} selected
+      </span>
+    )}
+    
+    <button
+      onClick={onQuickExport}
+      disabled={isExporting || !hasPatterns}
+      className={`flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg transition-colors ${
+        isExporting || !hasPatterns
+          ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+          : 'bg-blue-600 text-white hover:bg-blue-700'
+      }`}
+      title="Quick export with saved settings"
+    >
+      {isExporting ? (
         <>
-          <div
-            className="fixed inset-0 bg-black bg-opacity-50 z-40"
-            onClick={() => setShowExportModal(false)}
-          />
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-            <div
-              className="bg-white rounded-lg shadow-xl max-w-2xl w-full max-h-[90vh] overflow-hidden"
-              onClick={(e) => e.stopPropagation()}
-            >
-              {/* Header */}
-              <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
-                <div className="flex items-center gap-3">
-                  <svg className="w-6 h-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-                  </svg>
-                  <h2 className="text-xl font-semibold text-gray-900">Export Results</h2>
-                </div>
-                <button
-                  onClick={() => setShowExportModal(false)}
-                  className="p-2 text-gray-400 hover:text-gray-600 rounded-lg"
-                >
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                </button>
-              </div>
-
-              {/* Content */}
-              <div className="p-6 overflow-y-auto max-h-[calc(90vh-180px)]">
-                <div className="space-y-6">
-                  {/* Export Scope */}
-                  <div>
-                    <h3 className="text-sm font-semibold text-gray-900 mb-3">What to Export</h3>
-                    <div className="space-y-2">
-                      {exportScopes.map((scope) => (
-                        <label
-                          key={scope.id}
-                          className={`
-                            flex items-start gap-3 p-3 rounded-lg border-2 cursor-pointer transition-all
-                            ${scope.disabled
-                              ? 'opacity-50 cursor-not-allowed'
-                              : exportConfig.scope === scope.id
-                                ? 'border-blue-500 bg-blue-50'
-                                : 'border-gray-200 hover:border-gray-300'
-                            }
-                          `}
-                        >
-                          <input
-                            type="radio"
-                            name="scope"
-                            value={scope.id}
-                            checked={exportConfig.scope === scope.id}
-                            onChange={(e) => handleConfigChange('scope', e.target.value)}
-                            disabled={scope.disabled}
-                            className="mt-1 w-4 h-4 text-blue-600 border-gray-300"
-                          />
-                          <div className="flex-1">
-                            <div className="flex items-center justify-between">
-                              <span className="text-sm font-medium text-gray-900">
-                                {scope.name}
-                              </span>
-                              <span className="text-sm text-gray-600">
-                                {scope.count} pattern{scope.count !== 1 ? 's' : ''}
-                              </span>
-                            </div>
-                            <p className="text-xs text-gray-600 mt-0.5">
-                              {scope.description}
-                            </p>
-                          </div>
-                        </label>
-                      ))}
-                    </div>
-                  </div>
-
-                  {/* Export Format */}
-                  <div>
-                    <h3 className="text-sm font-semibold text-gray-900 mb-3">Export Format</h3>
-                    <div className="grid grid-cols-2 gap-3">
-                      {exportFormats.map((format) => (
-                        <label
-                          key={format.id}
-                          className={`
-                            flex flex-col p-3 rounded-lg border-2 cursor-pointer transition-all
-                            ${exportConfig.format === format.id
-                              ? 'border-blue-500 bg-blue-50'
-                              : 'border-gray-200 hover:border-gray-300'
-                            }
-                          `}
-                        >
-                          <input
-                            type="radio"
-                            name="format"
-                            value={format.id}
-                            checked={exportConfig.format === format.id}
-                            onChange={(e) => handleConfigChange('format', e.target.value)}
-                            className="sr-only"
-                          />
-                          <div className="flex items-center gap-2 mb-1">
-                            <span className="text-xl">{format.icon}</span>
-                            <span className="text-sm font-medium text-gray-900">
-                              {format.name}
-                            </span>
-                          </div>
-                          <p className="text-xs text-gray-600">
-                            {format.description}
-                          </p>
-                        </label>
-                      ))}
-                    </div>
-                  </div>
-
-                  {/* Export Options */}
-                  <div>
-                    <h3 className="text-sm font-semibold text-gray-900 mb-3">Include in Export</h3>
-                    <div className="space-y-3">
-                      <label className="flex items-start gap-3 cursor-pointer">
-                        <input
-                          type="checkbox"
-                          checked={exportConfig.includeScoreBreakdown}
-                          onChange={(e) => handleConfigChange('includeScoreBreakdown', e.target.checked)}
-                          className="mt-0.5 w-4 h-4 text-blue-600 border-gray-300 rounded"
-                        />
-                        <div>
-                          <span className="text-sm text-gray-900">Score breakdown</span>
-                          <p className="text-xs text-gray-600">
-                            Entity, linguistic, statistical, and spoilage scores
-                          </p>
-                        </div>
-                      </label>
-
-                      <label className="flex items-start gap-3 cursor-pointer">
-                        <input
-                          type="checkbox"
-                          checked={exportConfig.includeTransformationLogs}
-                          onChange={(e) => handleConfigChange('includeTransformationLogs', e.target.checked)}
-                          className="mt-0.5 w-4 h-4 text-blue-600 border-gray-300 rounded"
-                        />
-                        <div>
-                          <span className="text-sm text-gray-900">Transformation logs</span>
-                          <p className="text-xs text-gray-600">
-                            Step-by-step decoding process (increases file size)
-                          </p>
-                        </div>
-                      </label>
-
-                      <label className="flex items-start gap-3 cursor-pointer">
-                        <input
-                          type="checkbox"
-                          checked={exportConfig.includeMetadata}
-                          onChange={(e) => handleConfigChange('includeMetadata', e.target.checked)}
-                          className="mt-0.5 w-4 h-4 text-blue-600 border-gray-300 rounded"
-                        />
-                        <div>
-                          <span className="text-sm text-gray-900">Analysis metadata</span>
-                          <p className="text-xs text-gray-600">
-                            Source text, configuration, timestamp
-                          </p>
-                        </div>
-                      </label>
-                    </div>
-                  </div>
-
-                  {/* File Preview */}
-                  <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
-                    <h4 className="text-sm font-medium text-gray-900 mb-2">Export Preview</h4>
-                    <div className="space-y-1 text-sm text-gray-600">
-                      <div className="flex justify-between">
-                        <span>Patterns:</span>
-                        <span className="font-medium text-gray-900">
-                          {patternsToExport.length}
-                        </span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span>Format:</span>
-                        <span className="font-medium text-gray-900">
-                          {exportFormats.find(f => f.id === exportConfig.format)?.name}
-                        </span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span>Estimated size:</span>
-                        <span className="font-medium text-gray-900">
-                          ~{estimatedFileSize} KB
-                        </span>
-                      </div>
-                      {exportConfig.includeTransformationLogs && (
-                        <div className="text-xs text-amber-600 mt-2">
-                          ⚠️ Including transformation logs will increase file size significantly
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {/* Footer */}
-              <div className="flex items-center justify-between px-6 py-4 border-t border-gray-200 bg-gray-50">
-                <button
-                  onClick={() => setShowExportModal(false)}
-                  className="px-4 py-2 text-sm font-medium text-gray-700 hover:text-gray-900 hover:bg-gray-200 rounded-lg transition-colors"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={handleExport}
-                  disabled={patternsToExport.length === 0 || isExporting}
-                  className={`
-                    flex items-center gap-2 px-6 py-2 text-sm font-medium rounded-lg transition-colors
-                    ${patternsToExport.length === 0 || isExporting
-                      ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
-                      : 'bg-blue-600 text-white hover:bg-blue-700'
-                    }
-                  `}
-                >
-                  {isExporting ? (
-                    <>
-                      <svg className="animate-spin w-4 h-4" fill="none" viewBox="0 0 24 24">
-                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-                      </svg>
-                      <span>Exporting...</span>
-                    </>
-                  ) : (
-                    <>
-                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-                      </svg>
-                      <span>Export {patternsToExport.length} Pattern{patternsToExport.length !== 1 ? 's' : ''}</span>
-                    </>
-                  )}
-                </button>
-              </div>
-            </div>
-          </div>
+          <Loader className="w-4 h-4 animate-spin" />
+          <span>Exporting...</span>
+        </>
+      ) : (
+        <>
+          <Download className="w-4 h-4" />
+          <span>Export</span>
         </>
       )}
-    </>
+    </button>
+
+    <button
+      onClick={onShowModal}
+      disabled={isExporting || allPatternsCount === 0}
+      className={`p-2 rounded-lg transition-colors ${
+        isExporting || allPatternsCount === 0
+          ? 'text-gray-400 cursor-not-allowed'
+          : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100'
+      }`}
+      title="Export options"
+    >
+      <MoreVertical className="w-5 h-5" />
+    </button>
+  </div>
+);
+
+const ExportModal = ({
+  exportConfig,
+  exportScopes,
+  patternsToExport,
+  estimatedFileSize,
+  isExporting,
+  onConfigChange,
+  onExport,
+  onClose,
+}) => (
+  <>
+    <div
+      className="fixed inset-0 bg-black bg-opacity-50 z-40"
+      onClick={onClose}
+    />
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div
+        className="bg-white rounded-lg shadow-xl max-w-2xl w-full max-h-[90vh] overflow-hidden"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <ModalHeader onClose={onClose} />
+        <ModalContent
+          exportConfig={exportConfig}
+          exportScopes={exportScopes}
+          patternsToExport={patternsToExport}
+          estimatedFileSize={estimatedFileSize}
+          onConfigChange={onConfigChange}
+        />
+        <ModalFooter
+          patternsToExport={patternsToExport}
+          isExporting={isExporting}
+          onExport={onExport}
+          onClose={onClose}
+        />
+      </div>
+    </div>
+  </>
+);
+
+const ModalHeader = ({ onClose }) => (
+  <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
+    <div className="flex items-center gap-3">
+      <Download className="w-6 h-6 text-blue-600" />
+      <h2 className="text-xl font-semibold text-gray-900">Export Results</h2>
+    </div>
+    <button
+      onClick={onClose}
+      className="p-2 text-gray-400 hover:text-gray-600 rounded-lg"
+    >
+      <X className="w-5 h-5" />
+    </button>
+  </div>
+);
+
+const ModalContent = ({
+  exportConfig,
+  exportScopes,
+  patternsToExport,
+  estimatedFileSize,
+  onConfigChange,
+}) => (
+  <div className="p-6 overflow-y-auto max-h-[calc(90vh-180px)]">
+    <div className="space-y-6">
+      <ScopeSection
+        exportScopes={exportScopes}
+        selectedScope={exportConfig.scope}
+        onScopeChange={(scope) => onConfigChange('scope', scope)}
+      />
+      
+      <FormatSection
+        selectedFormat={exportConfig.format}
+        onFormatChange={(format) => onConfigChange('format', format)}
+      />
+      
+      <OptionsSection
+        exportConfig={exportConfig}
+        onConfigChange={onConfigChange}
+      />
+      
+      <PreviewSection
+        patternsCount={patternsToExport.length}
+        format={exportConfig.format}
+        estimatedFileSize={estimatedFileSize}
+        includeTransformationLogs={exportConfig.includeTransformationLogs}
+      />
+    </div>
+  </div>
+);
+
+const ScopeSection = ({ exportScopes, selectedScope, onScopeChange }) => (
+  <div>
+    <h3 className="text-sm font-semibold text-gray-900 mb-3">What to Export</h3>
+    <div className="space-y-2">
+      {exportScopes.map((scope) => (
+        <ScopeOption
+          key={scope.id}
+          scope={scope}
+          isSelected={selectedScope === scope.id}
+          onSelect={() => onScopeChange(scope.id)}
+        />
+      ))}
+    </div>
+  </div>
+);
+
+const ScopeOption = ({ scope, isSelected, onSelect }) => (
+  <label
+    className={`flex items-start gap-3 p-3 rounded-lg border-2 cursor-pointer transition-all ${
+      scope.disabled
+        ? 'opacity-50 cursor-not-allowed'
+        : isSelected
+          ? 'border-blue-500 bg-blue-50'
+          : 'border-gray-200 hover:border-gray-300'
+    }`}
+  >
+    <input
+      type="radio"
+      name="scope"
+      value={scope.id}
+      checked={isSelected}
+      onChange={onSelect}
+      disabled={scope.disabled}
+      className="mt-1 w-4 h-4 text-blue-600 border-gray-300"
+    />
+    <div className="flex-1">
+      <div className="flex items-center justify-between">
+        <span className="text-sm font-medium text-gray-900">
+          {scope.name}
+        </span>
+        <span className="text-sm text-gray-600">
+          {scope.count} pattern{scope.count !== 1 ? 's' : ''}
+        </span>
+      </div>
+      <p className="text-xs text-gray-600 mt-0.5">
+        {scope.description}
+      </p>
+    </div>
+  </label>
+);
+
+const FormatSection = ({ selectedFormat, onFormatChange }) => (
+  <div>
+    <h3 className="text-sm font-semibold text-gray-900 mb-3">Export Format</h3>
+    <div className="grid grid-cols-2 gap-3">
+      {EXPORT_FORMATS.map((format) => (
+        <FormatOption
+          key={format.id}
+          format={format}
+          isSelected={selectedFormat === format.id}
+          onSelect={() => onFormatChange(format.id)}
+        />
+      ))}
+    </div>
+  </div>
+);
+
+const FormatOption = ({ format, isSelected, onSelect }) => (
+  <label
+    className={`flex flex-col p-3 rounded-lg border-2 cursor-pointer transition-all ${
+      isSelected
+        ? 'border-blue-500 bg-blue-50'
+        : 'border-gray-200 hover:border-gray-300'
+    }`}
+  >
+    <input
+      type="radio"
+      name="format"
+      value={format.id}
+      checked={isSelected}
+      onChange={onSelect}
+      className="sr-only"
+    />
+    <div className="flex items-center gap-2 mb-1">
+      <span className="text-xl">{format.icon}</span>
+      <span className="text-sm font-medium text-gray-900">
+        {format.name}
+      </span>
+    </div>
+    <p className="text-xs text-gray-600">
+      {format.description}
+    </p>
+  </label>
+);
+
+const OptionsSection = ({ exportConfig, onConfigChange }) => (
+  <div>
+    <h3 className="text-sm font-semibold text-gray-900 mb-3">Include in Export</h3>
+    <div className="space-y-3">
+      <CheckboxOption
+        label="Score breakdown"
+        description="Entity, linguistic, statistical, and spoilage scores"
+        checked={exportConfig.includeScoreBreakdown}
+        onChange={(checked) => onConfigChange('includeScoreBreakdown', checked)}
+      />
+      <CheckboxOption
+        label="Transformation logs"
+        description="Step-by-step decoding process (increases file size)"
+        checked={exportConfig.includeTransformationLogs}
+        onChange={(checked) => onConfigChange('includeTransformationLogs', checked)}
+      />
+      <CheckboxOption
+        label="Analysis metadata"
+        description="Source text, configuration, timestamp"
+        checked={exportConfig.includeMetadata}
+        onChange={(checked) => onConfigChange('includeMetadata', checked)}
+      />
+    </div>
+  </div>
+);
+
+const CheckboxOption = ({ label, description, checked, onChange }) => (
+  <label className="flex items-start gap-3 cursor-pointer">
+    <input
+      type="checkbox"
+      checked={checked}
+      onChange={(e) => onChange(e.target.checked)}
+      className="mt-0.5 w-4 h-4 text-blue-600 border-gray-300 rounded"
+    />
+    <div>
+      <span className="text-sm text-gray-900">{label}</span>
+      <p className="text-xs text-gray-600">{description}</p>
+    </div>
+  </label>
+);
+
+const PreviewSection = ({
+  patternsCount,
+  format,
+  estimatedFileSize,
+  includeTransformationLogs,
+}) => {
+  const formatName = EXPORT_FORMATS.find(f => f.id === format)?.name;
+  
+  return (
+    <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
+      <h4 className="text-sm font-medium text-gray-900 mb-2">Export Preview</h4>
+      <div className="space-y-1 text-sm text-gray-600">
+        <PreviewRow label="Patterns" value={patternsCount} />
+        <PreviewRow label="Format" value={formatName} />
+        <PreviewRow label="Estimated size" value={`~${estimatedFileSize} KB`} />
+        {includeTransformationLogs && (
+          <div className="text-xs text-amber-600 mt-2">
+            ⚠️ Including transformation logs will increase file size significantly
+          </div>
+        )}
+      </div>
+    </div>
   );
 };
+
+const PreviewRow = ({ label, value }) => (
+  <div className="flex justify-between">
+    <span>{label}:</span>
+    <span className="font-medium text-gray-900">{value}</span>
+  </div>
+);
+
+const ModalFooter = ({ patternsToExport, isExporting, onExport, onClose }) => (
+  <div className="flex items-center justify-between px-6 py-4 border-t border-gray-200 bg-gray-50">
+    <button
+      onClick={onClose}
+      className="px-4 py-2 text-sm font-medium text-gray-700 hover:text-gray-900 hover:bg-gray-200 rounded-lg transition-colors"
+    >
+      Cancel
+    </button>
+    <button
+      onClick={onExport}
+      disabled={patternsToExport.length === 0 || isExporting}
+      className={`flex items-center gap-2 px-6 py-2 text-sm font-medium rounded-lg transition-colors ${
+        patternsToExport.length === 0 || isExporting
+          ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
+          : 'bg-blue-600 text-white hover:bg-blue-700'
+      }`}
+    >
+      {isExporting ? (
+        <>
+          <Loader className="w-4 h-4 animate-spin" />
+          <span>Exporting...</span>
+        </>
+      ) : (
+        <>
+          <Download className="w-4 h-4" />
+          <span>Export {patternsToExport.length} Pattern{patternsToExport.length !== 1 ? 's' : ''}</span>
+        </>
+      )}
+    </button>
+  </div>
+);
 
 export default ExportControls;

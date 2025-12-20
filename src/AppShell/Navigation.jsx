@@ -36,6 +36,13 @@ const Navigation = ({
       secondaryBadge: highConfidenceCount > 0 ? `⭐ ${highConfidenceCount}` : null,
     },
     {
+      id: 'ai_chat',
+      label: 'AI Chat',
+      description: 'Chat with AI about your decoded results',
+      icon: '🤖',
+      badge: resultCount > 0 ? '✨' : null,
+    },
+    {
       id: 'library',
       label: 'Library',
       description: 'Manage sources and saved sessions',
@@ -66,10 +73,10 @@ const Navigation = ({
 
   const closeMobileMenu = () => setIsMobileMenuOpen(false);
 
-  // Keyboard shortcuts (Ctrl/Cmd + 1-4)
+  // Keyboard shortcuts (Ctrl/Cmd + 1-5)
   React.useEffect(() => {
     const handleGlobalKeyDown = (e) => {
-      if ((e.ctrlKey || e.metaKey) && e.key >= '1' && e.key <= '4') {
+      if ((e.ctrlKey || e.metaKey) && e.key >= '1' && e.key <= '5') {
         e.preventDefault();
         const index = parseInt(e.key) - 1;
         if (views[index]) {
@@ -121,7 +128,9 @@ const Navigation = ({
                   focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2
                   ${
                     activeView === view.id
-                      ? 'text-blue-600 font-semibold border-b-3 border-blue-600 bg-blue-50'
+                      ? view.id === 'ai_chat'
+                        ? 'text-purple-600 font-semibold border-b-3 border-purple-600 bg-gradient-to-br from-purple-50 to-pink-50'
+                        : 'text-blue-600 font-semibold border-b-3 border-blue-600 bg-blue-50'
                       : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
                   }
                 `}
@@ -131,8 +140,15 @@ const Navigation = ({
                   <span>{view.label}</span>
                   
                   {/* Primary Badge */}
-                  {view.badge && (
+                  {view.badge && view.id !== 'ai_chat' && (
                     <span className="ml-1 px-2 py-0.5 text-xs bg-blue-100 text-blue-700 rounded-full">
+                      {view.badge}
+                    </span>
+                  )}
+                  
+                  {/* AI Chat Special Badge */}
+                  {view.badge && view.id === 'ai_chat' && (
+                    <span className="ml-1 px-2 py-0.5 text-xs bg-gradient-to-r from-purple-100 to-pink-100 text-purple-700 rounded-full animate-pulse">
                       {view.badge}
                     </span>
                   )}
@@ -147,7 +163,11 @@ const Navigation = ({
 
                 {/* Active indicator line */}
                 {activeView === view.id && (
-                  <div className="absolute bottom-0 left-0 right-0 h-1 bg-blue-600 rounded-t" />
+                  <div className={`absolute bottom-0 left-0 right-0 h-1 rounded-t ${
+                    view.id === 'ai_chat' 
+                      ? 'bg-gradient-to-r from-purple-600 to-pink-600' 
+                      : 'bg-blue-600'
+                  }`} />
                 )}
               </button>
             ))}
@@ -192,29 +212,6 @@ const Navigation = ({
               <span>Unsaved</span>
             </div>
           )}
-
-          {/* Settings Button */}
-          {/* <button
-            onClick={onSettingsClick}
-            className="p-2 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors"
-            title="Settings (Ctrl+,)"
-            aria-label="Open settings"
-          >
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"
-              />
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"
-              />
-            </svg>
-          </button> */}
 
           {/* Help Button */}
           <button
@@ -338,7 +335,9 @@ const Navigation = ({
                     w-full flex items-center justify-between px-4 py-3 text-left transition-colors
                     ${
                       activeView === view.id
-                        ? 'bg-blue-50 text-blue-600 font-semibold border-l-4 border-blue-600'
+                        ? view.id === 'ai_chat'
+                          ? 'bg-gradient-to-r from-purple-50 to-pink-50 text-purple-600 font-semibold border-l-4 border-purple-600'
+                          : 'bg-blue-50 text-blue-600 font-semibold border-l-4 border-blue-600'
                         : 'text-gray-700 hover:bg-gray-50'
                     }
                   `}
@@ -348,8 +347,14 @@ const Navigation = ({
                     <span>{view.label}</span>
                   </span>
                   
-                  {view.badge && (
+                  {view.badge && view.id !== 'ai_chat' && (
                     <span className="px-2 py-0.5 text-xs bg-blue-100 text-blue-700 rounded-full">
+                      {view.badge}
+                    </span>
+                  )}
+                  
+                  {view.badge && view.id === 'ai_chat' && (
+                    <span className="px-2 py-0.5 text-xs bg-gradient-to-r from-purple-100 to-pink-100 text-purple-700 rounded-full">
                       {view.badge}
                     </span>
                   )}
@@ -358,31 +363,6 @@ const Navigation = ({
 
               {/* Divider */}
               <div className="my-2 border-t border-gray-200" />
-
-              {/* Settings */}
-              {/* <button
-                onClick={() => {
-                  onSettingsClick();
-                  closeMobileMenu();
-                }}
-                className="w-full flex items-center gap-3 px-4 py-3 text-left text-gray-700 hover:bg-gray-50 transition-colors"
-              >
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"
-                  />
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"
-                  />
-                </svg>
-                <span>Settings</span>
-              </button> */}
 
               {/* Help */}
               <button
@@ -411,7 +391,7 @@ const Navigation = ({
 };
 
 Navigation.propTypes = {
-  activeView: PropTypes.oneOf(['workspace', 'analyze', 'results', 'library']).isRequired,
+  activeView: PropTypes.oneOf(['workspace', 'analyze', 'results', 'library', 'ai_chat']).isRequired,
   onNavigate: PropTypes.func.isRequired,
   hasUnsavedChanges: PropTypes.bool,
   isProcessing: PropTypes.bool,
