@@ -24,8 +24,8 @@ function mapSegmentationType(mode) {
   return segmentTypeMap[mode] || 'paragraph'; // Default to 'paragraph' if unknown
 }
 // ==================== CONFIGURATION ====================
+const API_BASE_URL = 'http://192.99.245.215:8000'
 // const API_BASE_URL = 'http://192.99.245.215:8000'
-const API_BASE_URL = 'http://localhost:8000'
 
 // ==================== API CLIENT ====================
 class APIClient {

@@ -128,7 +128,7 @@ What would you like to explore?`,
         assistant: msg.role === 'assistant' ? msg.content : undefined
       })).filter(msg => msg.user || msg.assistant);
 
-      const response = await fetch('http://localhost:8000/api/ai/chat', {
+      const response = await fetch('http://192.99.245.215:8000/api/ai/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

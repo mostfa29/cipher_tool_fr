@@ -385,7 +385,7 @@ const CandidateRow = ({ candidate, rank, isTop, segmentId, dispatch }) => {
     setEnhancing(true);
     
     try {
-      const response = await fetch('http://localhost:8000/api/ai/enhance', {
+      const response = await fetch('http://192.99.245.215:8000/api/ai/enhance', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

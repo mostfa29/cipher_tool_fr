@@ -14,13 +14,13 @@ const APIConnectionTest = () => {
 
   const runTests = async () => {
     // Test root endpoint
-    await testEndpoint('root', 'http://localhost:8000');
+    await testEndpoint('root', 'http://192.99.245.215:8000');
     
     // Test health endpoint
-    await testEndpoint('health', 'http://localhost:8000/health');
+    await testEndpoint('health', 'http://192.99.245.215:8000/health');
     
     // Test authors endpoint
-    await testEndpoint('authors', 'http://localhost:8000/api/corpus/authors');
+    await testEndpoint('authors', 'http://192.99.245.215:8000/api/corpus/authors');
   };
 
   const testEndpoint = async (key, url) => {
