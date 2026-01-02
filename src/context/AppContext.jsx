@@ -75,7 +75,181 @@ class APIClient {
     throw error;
   }
 }
+// Add these methods to the APIClient class:
 
+// Advanced Analysis Endpoints
+calculateStatisticalImprobability(decodedText, segmentLength, cipherMethod) {
+  return this.request('/api/analysis/statistical-improbability', {
+    method: 'POST',
+    body: JSON.stringify({
+      decoded_text: decodedText,
+      segment_length: segmentLength,
+      cipher_method: cipherMethod
+    }),
+  });
+}
+
+analyzeEntityClustering(decodedText, entities = null) {
+  return this.request('/api/analysis/entity-clustering', {
+    method: 'POST',
+    body: JSON.stringify({
+      decoded_text: decodedText,
+      entities: entities
+    }),
+  });
+}
+
+getSpoilageDistribution(workIds = null, viewMode = 'standard') {
+  const params = new URLSearchParams();
+  if (workIds) workIds.forEach(id => params.append('work_ids', id));
+  params.append('view_mode', viewMode);
+  return this.request(`/api/analysis/spoilage-distribution?${params}`);
+}
+
+extractThematicLayers(jobId, themes = ['identity', 'persecution', 'scandal', 'decoy', 'venice']) {
+  return this.request('/api/analysis/extract-themes', {
+    method: 'POST',
+    body: JSON.stringify({ job_id: jobId, themes }),
+  });
+}
+
+compareMultipleWorks(workIds, comparisonMetrics = ['spoilage', 'entity_frequency', 'cipher_methods', 'confidence']) {
+  return this.request('/api/analysis/compare-works', {
+    method: 'POST',
+    body: JSON.stringify({
+      work_ids: workIds,
+      comparison_metrics: comparisonMetrics
+    }),
+  });
+}
+
+// Multi-Edition Analysis
+analyzeMultipleEditions(request) {
+  return this.request('/api/analysis/multi-edition', {
+    method: 'POST',
+    body: JSON.stringify(request),
+  });
+}
+
+compareEditions(request) {
+  return this.request('/api/analysis/compare-editions', {
+    method: 'POST',
+    body: JSON.stringify(request),
+  });
+}
+
+analyzeSpoilageAcrossEditions(request) {
+  return this.request('/api/analysis/spoilage-analysis', {
+    method: 'POST',
+    body: JSON.stringify(request),
+  });
+}
+
+// Advanced Segmentation
+segmentByClause(workId, authorFolder, minClauseLength = 30, maxClauseLength = 150) {
+  return this.request('/api/segmentation/by-clause', {
+    method: 'POST',
+    body: JSON.stringify({
+      work_id: workId,
+      author_folder: authorFolder,
+      min_clause_length: minClauseLength,
+      max_clause_length: maxClauseLength
+    }),
+  });
+}
+
+// Interactive Analysis
+suggestLetterChoices(partialDecode, remainingLetters, targetEntities = [], maxSuggestions = 10, aggressiveness = 0.5) {
+  return this.request('/api/analysis/suggest-letters', {
+    method: 'POST',
+    body: JSON.stringify({
+      partial_decode: partialDecode,
+      remaining_letters: remainingLetters,
+      target_entities: targetEntities,
+      max_suggestions: maxSuggestions,
+      aggressiveness: aggressiveness
+    }),
+  });
+}
+
+// Batch Processing & Export
+batchProcess(request) {
+  return this.request('/api/batch/process', {
+    method: 'POST',
+    body: JSON.stringify(request),
+  });
+}
+
+exportToGoogleSheets(jobIds, sheetName = "Cipher Analysis", includeMetadata = true, includeQualityFlags = true, groupBy = "work") {
+  return this.request('/api/batch/export-to-sheets', {
+    method: 'POST',
+    body: JSON.stringify({
+      job_ids: jobIds,
+      sheet_name: sheetName,
+      include_metadata: includeMetadata,
+      include_quality_flags: includeQualityFlags,
+      group_by: groupBy
+    }),
+  });
+}
+
+listBatchExports() {
+  return this.request('/api/batch/exports');
+}
+
+downloadBatchExport(filename) {
+  return this.request(`/api/batch/download/${filename}`);
+}
+
+// AI Enhancement
+enhanceWithAI(decodedText, mode = 'standard', maxSuggestions = 10) {
+  return this.request('/api/ai/enhance', {
+    method: 'POST',
+    body: JSON.stringify({
+      decoded_text: decodedText,
+      mode: mode,
+      max_suggestions: maxSuggestions
+    }),
+  });
+}
+
+chatWithAI(message, conversationHistory = []) {
+  return this.request('/api/ai/chat', {
+    method: 'POST',
+    body: JSON.stringify({
+      message: message,
+      conversation_history: conversationHistory
+    }),
+  });
+}
+
+reconstructGibberish(gibberishText, maxReconstructions = 5) {
+  return this.request('/api/ai/reconstruct-gibberish', {
+    method: 'POST',
+    body: JSON.stringify({
+      gibberish_text: gibberishText,
+      max_reconstructions: maxReconstructions
+    }),
+  });
+}
+
+// Progress & Statistics
+getProgressDashboard() {
+  return this.request('/api/progress/dashboard');
+}
+
+validateJobResult(jobId) {
+  return this.request(`/api/jobs/${jobId}/validate`);
+}
+
+downloadResults(jobId, format = 'json') {
+  const url = `${this.baseURL}/api/batch/export/${jobId}_export.${format}`;
+  window.open(url, '_blank');
+}
+
+healthCheck() {
+  return this.request('/health');
+}
   // Authors & Works
   getAuthors() {
     return this.request('/api/corpus/authors');
@@ -209,6 +383,29 @@ export const ACTIONS = {
 
   TOGGLE_MODAL: 'TOGGLE_MODAL',
   UPDATE_SETTINGS: 'UPDATE_SETTINGS',
+
+    // Advanced Analysis
+  SET_STATISTICAL_IMPROBABILITY: 'SET_STATISTICAL_IMPROBABILITY',
+  SET_ENTITY_CLUSTERING: 'SET_ENTITY_CLUSTERING',
+  SET_SPOILAGE_DISTRIBUTION: 'SET_SPOILAGE_DISTRIBUTION',
+  SET_THEMATIC_LAYERS: 'SET_THEMATIC_LAYERS',
+  SET_WORK_COMPARISON: 'SET_WORK_COMPARISON',
+  
+  // Multi-Edition
+  SET_MULTI_EDITION_RESULTS: 'SET_MULTI_EDITION_RESULTS',
+  SET_EDITION_COMPARISON: 'SET_EDITION_COMPARISON',
+  
+  // Interactive Analysis
+  SET_LETTER_SUGGESTIONS: 'SET_LETTER_SUGGESTIONS',
+  UPDATE_AI_CHAT_HISTORY: 'UPDATE_AI_CHAT_HISTORY',
+  SET_GIBBERISH_RECONSTRUCTIONS: 'SET_GIBBERISH_RECONSTRUCTIONS',
+  
+  // Batch & Export
+  SET_BATCH_RESULTS: 'SET_BATCH_RESULTS',
+  SET_EXPORT_STATUS: 'SET_EXPORT_STATUS',
+  
+  // Progress
+  SET_PROGRESS_DASHBOARD: 'SET_PROGRESS_DASHBOARD',
 };
 
 // ==================== REDUCER ====================
@@ -230,6 +427,124 @@ function appReducer(state, action) {
       ...state.analyze,
       viewMode: action.payload,
       selectedStrategy: action.payload, // Ensure both are set
+    },
+  };
+  // In appReducer function, add these cases:
+
+case ACTIONS.SET_STATISTICAL_IMPROBABILITY:
+  return {
+    ...state,
+    results: {
+      ...state.results,
+      statisticalImprobability: action.payload,
+    },
+  };
+
+case ACTIONS.SET_ENTITY_CLUSTERING:
+  return {
+    ...state,
+    results: {
+      ...state.results,
+      entityClustering: action.payload,
+    },
+  };
+
+case ACTIONS.SET_SPOILAGE_DISTRIBUTION:
+  return {
+    ...state,
+    results: {
+      ...state.results,
+      spoilageDistribution: action.payload,
+    },
+  };
+
+case ACTIONS.SET_THEMATIC_LAYERS:
+  return {
+    ...state,
+    results: {
+      ...state.results,
+      thematicLayers: action.payload,
+    },
+  };
+
+case ACTIONS.SET_WORK_COMPARISON:
+  return {
+    ...state,
+    results: {
+      ...state.results,
+      workComparison: action.payload,
+    },
+  };
+
+case ACTIONS.SET_MULTI_EDITION_RESULTS:
+  return {
+    ...state,
+    results: {
+      ...state.results,
+      multiEditionResults: action.payload,
+    },
+  };
+
+case ACTIONS.SET_EDITION_COMPARISON:
+  return {
+    ...state,
+    results: {
+      ...state.results,
+      editionComparison: action.payload,
+    },
+  };
+
+case ACTIONS.SET_LETTER_SUGGESTIONS:
+  return {
+    ...state,
+    analyze: {
+      ...state.analyze,
+      letterSuggestions: action.payload,
+    },
+  };
+
+case ACTIONS.UPDATE_AI_CHAT_HISTORY:
+  return {
+    ...state,
+    analyze: {
+      ...state.analyze,
+      aiChatHistory: [...(state.analyze.aiChatHistory || []), action.payload],
+    },
+  };
+
+case ACTIONS.SET_GIBBERISH_RECONSTRUCTIONS:
+  return {
+    ...state,
+    results: {
+      ...state.results,
+      gibberishReconstructions: action.payload,
+    },
+  };
+
+case ACTIONS.SET_BATCH_RESULTS:
+  return {
+    ...state,
+    results: {
+      ...state.results,
+      batchResults: action.payload,
+    },
+  };
+
+case ACTIONS.SET_EXPORT_STATUS:
+  return {
+    ...state,
+    ui: {
+      ...state.ui,
+      exportStatus: action.payload,
+    },
+  };
+
+case ACTIONS.SET_PROGRESS_DASHBOARD:
+  return {
+    ...state,
+    ui: {
+      ...state.ui,
+      progressDashboard: action.payload,
     },
   };
   case ACTIONS.SET_AI_ENHANCEMENT_RESULT:
@@ -600,6 +915,154 @@ export function AppProvider({ children }) {
       payload: { type, message, ...options },
     });
   }, []);
+  // Advanced Analysis Functions
+const analyzeStatisticalImprobability = useCallback(async (decodedText, segmentLength, cipherMethod) => {
+  try {
+    const result = await api.calculateStatisticalImprobability(decodedText, segmentLength, cipherMethod);
+    dispatch({ type: ACTIONS.SET_STATISTICAL_IMPROBABILITY, payload: result });
+    return result;
+  } catch (error) {
+    addNotification('error', 'Failed to calculate improbability: ' + error.message);
+    throw error;
+  }
+}, [addNotification]);
+
+const analyzeEntityClustering = useCallback(async (decodedText, entities = null) => {
+  try {
+    const result = await api.analyzeEntityClustering(decodedText, entities);
+    dispatch({ type: ACTIONS.SET_ENTITY_CLUSTERING, payload: result });
+    return result;
+  } catch (error) {
+    addNotification('error', 'Failed to analyze entity clustering: ' + error.message);
+    throw error;
+  }
+}, [addNotification]);
+
+const getSpoilageDistribution = useCallback(async (workIds = null, viewMode = 'standard') => {
+  try {
+    const result = await api.getSpoilageDistribution(workIds, viewMode);
+    dispatch({ type: ACTIONS.SET_SPOILAGE_DISTRIBUTION, payload: result });
+    return result;
+  } catch (error) {
+    addNotification('error', 'Failed to get spoilage distribution: ' + error.message);
+    throw error;
+  }
+}, [addNotification]);
+
+const extractThematicLayers = useCallback(async (jobId, themes) => {
+  try {
+    const result = await api.extractThematicLayers(jobId, themes);
+    dispatch({ type: ACTIONS.SET_THEMATIC_LAYERS, payload: result });
+    addNotification('success', `Extracted ${Object.keys(result.layers).length} thematic layers`);
+    return result;
+  } catch (error) {
+    addNotification('error', 'Failed to extract themes: ' + error.message);
+    throw error;
+  }
+}, [addNotification]);
+
+const compareWorks = useCallback(async (workIds, metrics) => {
+  try {
+    const result = await api.compareMultipleWorks(workIds, metrics);
+    dispatch({ type: ACTIONS.SET_WORK_COMPARISON, payload: result });
+    addNotification('success', `Compared ${workIds.length} works`);
+    return result;
+  } catch (error) {
+    addNotification('error', 'Failed to compare works: ' + error.message);
+    throw error;
+  }
+}, [addNotification]);
+
+// Multi-Edition Functions
+const analyzeMultiEdition = useCallback(async (request) => {
+  try {
+    const result = await api.analyzeMultipleEditions(request);
+    dispatch({ type: ACTIONS.SET_MULTI_EDITION_RESULTS, payload: result });
+    addNotification('success', `Analyzed ${result.editions_analyzed} editions`);
+    return result;
+  } catch (error) {
+    addNotification('error', 'Multi-edition analysis failed: ' + error.message);
+    throw error;
+  }
+}, [addNotification]);
+
+const compareEditions = useCallback(async (request) => {
+  try {
+    const result = await api.compareEditions(request);
+    dispatch({ type: ACTIONS.SET_EDITION_COMPARISON, payload: result });
+    return result;
+  } catch (error) {
+    addNotification('error', 'Edition comparison failed: ' + error.message);
+    throw error;
+  }
+}, [addNotification]);
+
+// Interactive Analysis
+const suggestLetters = useCallback(async (partialDecode, remainingLetters, targetEntities, maxSuggestions, aggressiveness) => {
+  try {
+    const result = await api.suggestLetterChoices(partialDecode, remainingLetters, targetEntities, maxSuggestions, aggressiveness);
+    dispatch({ type: ACTIONS.SET_LETTER_SUGGESTIONS, payload: result });
+    return result;
+  } catch (error) {
+    addNotification('error', 'Failed to suggest letters: ' + error.message);
+    throw error;
+  }
+}, [addNotification]);
+
+const chatWithAI = useCallback(async (message) => {
+  try {
+    const history = state.analyze.aiChatHistory || [];
+    const result = await api.chatWithAI(message, history);
+    dispatch({ type: ACTIONS.UPDATE_AI_CHAT_HISTORY, payload: { role: 'user', content: message } });
+    dispatch({ type: ACTIONS.UPDATE_AI_CHAT_HISTORY, payload: { role: 'assistant', content: result.response } });
+    return result;
+  } catch (error) {
+    addNotification('error', 'AI chat failed: ' + error.message);
+    throw error;
+  }
+}, [state.analyze.aiChatHistory, addNotification]);
+
+const reconstructGibberish = useCallback(async (gibberishText, maxReconstructions = 5) => {
+  try {
+    const result = await api.reconstructGibberish(gibberishText, maxReconstructions);
+    dispatch({ type: ACTIONS.SET_GIBBERISH_RECONSTRUCTIONS, payload: result });
+    addNotification('success', `Generated ${result.count} reconstructions`);
+    return result;
+  } catch (error) {
+    addNotification('error', 'Gibberish reconstruction failed: ' + error.message);
+    throw error;
+  }
+}, [addNotification]);
+
+// Batch & Export
+const exportToSheets = useCallback(async (jobIds, options = {}) => {
+  try {
+    const result = await api.exportToGoogleSheets(
+      jobIds,
+      options.sheetName,
+      options.includeMetadata,
+      options.includeQualityFlags,
+      options.groupBy
+    );
+    dispatch({ type: ACTIONS.SET_EXPORT_STATUS, payload: result });
+    addNotification('success', `Exported ${result.rows_exported} rows to CSV`);
+    return result;
+  } catch (error) {
+    addNotification('error', 'Export failed: ' + error.message);
+    throw error;
+  }
+}, [addNotification]);
+
+const getProgressDashboard = useCallback(async () => {
+  try {
+    const result = await api.getProgressDashboard();
+    dispatch({ type: ACTIONS.SET_PROGRESS_DASHBOARD, payload: result });
+    return result;
+  } catch (error) {
+    addNotification('error', 'Failed to load dashboard: ' + error.message);
+    throw error;
+  }
+}, [addNotification]);
 
   const toggleModal = useCallback((modalName, isOpen) => {
     dispatch({
@@ -1083,21 +1546,38 @@ export function AppProvider({ children }) {
 
   // ==================== CONTEXT VALUE ====================
   const value = {
-    state,
-    dispatch,
-    api,
-    addNotification,
-    toggleModal,
-    selectAuthor,
-    loadWork,
-    saveWorkText,
-    createAutoSegmentation,
-    saveSegmentation,
-    loadSegmentation,
-    deleteSegmentation,
-    startAnalysis,
-    exportResults,
-  };
+  state,
+  dispatch,
+  api,
+  // Existing functions
+  addNotification,
+  toggleModal,
+  selectAuthor,
+  loadWork,
+  saveWorkText,
+  createAutoSegmentation,
+  saveSegmentation,
+  loadSegmentation,
+  deleteSegmentation,
+  startAnalysis,
+  exportResults,
+  // New advanced analysis functions
+  analyzeStatisticalImprobability,
+  analyzeEntityClustering,
+  getSpoilageDistribution,
+  extractThematicLayers,
+  compareWorks,
+  // Multi-edition functions
+  analyzeMultiEdition,
+  compareEditions,
+  // Interactive analysis
+  suggestLetters,
+  chatWithAI,
+  reconstructGibberish,
+  // Batch & export
+  exportToSheets,
+  getProgressDashboard,
+};
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>;
 }
