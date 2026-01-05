@@ -71,12 +71,43 @@ const STATUS_CONFIG = {
 };
 
 // ============================================================================
+// UTILITY FUNCTIONS
+// ============================================================================
+
+function formatTime(seconds) {
+  const mins = Math.floor(seconds / 60);
+  const secs = seconds % 60;
+  return `${mins}:${secs.toString().padStart(2, '0')}`;
+}
+
+function getStatusDescription(statusConfig, currentSegment, totalSegments, job) {
+  const { description } = statusConfig;
+  
+  // Check if this is a multi-edition job
+  const isMultiEdition = job?.metadata?.is_multi_edition || 
+                         job?.work_title?.includes('editions') ||
+                         totalSegments > 100; // Heuristic
+  
+  if (typeof description === 'function') {
+    const baseDesc = description(currentSegment, totalSegments);
+    if (isMultiEdition) {
+      return `${baseDesc} (Multi-Edition Analysis)`;
+    }
+    return baseDesc;
+  }
+  
+  return description;
+}
+
+// ============================================================================
 // MAIN COMPONENT
 // ============================================================================
 
-const ProgressTracker = ({ showDetails = false }) => {
+const ProgressTracker = ({ job, showDetails = false }) => {
   const { state, dispatch } = useAppState();
-  const job = state.analyze.currentJob;
+  
+  // Use job from props or fallback to state
+  const currentJob = job || state.analyze.currentJob;
   
   const [elapsedTime, setElapsedTime] = useState(0);
   const [showDetailModal, setShowDetailModal] = useState(false);
@@ -89,10 +120,10 @@ const ProgressTracker = ({ showDetails = false }) => {
     totalSegments = 0,
     startTime = null,
     estimatedTime = null,
-    resultsCount = 0,
-    highConfidenceCount = 0,
-    latestResults = [],
-  } = job || {};
+    results_count = 0,
+    high_confidence_count = 0,
+    latest_results = [],
+  } = currentJob || {};
 
   // Elapsed time tracking
   useElapsedTimeTracker(status, startTime, setElapsedTime);
@@ -130,7 +161,7 @@ const ProgressTracker = ({ showDetails = false }) => {
   }, [dispatch]);
 
   // Don't render if no job or idle
-  if (!job || status === 'idle') {
+  if (!currentJob || status === 'idle') {
     return null;
   }
 
@@ -144,9 +175,9 @@ const ProgressTracker = ({ showDetails = false }) => {
         totalSegments={totalSegments}
         elapsedTime={elapsedTime}
         estimatedTime={estimatedTime}
-        resultsCount={resultsCount}
-        highConfidenceCount={highConfidenceCount}
-        latestResults={latestResults}
+        resultsCount={results_count}
+        highConfidenceCount={high_confidence_count}
+        latestResults={latest_results}
         controls={controls}
         showDetails={showDetails}
         onPause={handlePause}
@@ -154,6 +185,7 @@ const ProgressTracker = ({ showDetails = false }) => {
         onCancel={handleCancel}
         onViewResults={handleViewResults}
         onShowDetails={() => setShowDetailModal(true)}
+        job={currentJob}
       />
 
       {showDetailModal && (
@@ -165,9 +197,9 @@ const ProgressTracker = ({ showDetails = false }) => {
           totalSegments={totalSegments}
           elapsedTime={elapsedTime}
           estimatedTime={estimatedTime}
-          resultsCount={resultsCount}
-          highConfidenceCount={highConfidenceCount}
-          latestResults={latestResults}
+          resultsCount={results_count}
+          highConfidenceCount={high_confidence_count}
+          latestResults={latest_results}
           controls={controls}
           onPause={handlePause}
           onResume={handleResume}
@@ -197,23 +229,6 @@ function useElapsedTimeTracker(status, startTime, setElapsedTime) {
 }
 
 // ============================================================================
-// UTILITY FUNCTIONS
-// ============================================================================
-
-function formatTime(seconds) {
-  const mins = Math.floor(seconds / 60);
-  const secs = seconds % 60;
-  return `${mins}:${secs.toString().padStart(2, '0')}`;
-}
-
-function getStatusDescription(statusConfig, currentSegment, totalSegments) {
-  const { description } = statusConfig;
-  return typeof description === 'function'
-    ? description(currentSegment, totalSegments)
-    : description;
-}
-
-// ============================================================================
 // SUB-COMPONENTS - PROGRESS PANEL
 // ============================================================================
 
@@ -235,6 +250,7 @@ const ProgressPanel = ({
   onCancel,
   onViewResults,
   onShowDetails,
+  job,
 }) => (
   <div className={`border rounded-lg ${statusConfig.borderColor} ${statusConfig.bgColor} overflow-hidden`}>
     <PanelHeader
@@ -249,6 +265,7 @@ const ProgressPanel = ({
       onResume={onResume}
       onCancel={onCancel}
       onShowDetails={onShowDetails}
+      job={job}
     />
 
     {(status === 'processing' || status === 'paused') && (
@@ -291,6 +308,7 @@ const PanelHeader = ({
   onResume,
   onCancel,
   onShowDetails,
+  job,
 }) => {
   const StatusIcon = statusConfig.icon;
   
@@ -313,7 +331,7 @@ const PanelHeader = ({
               )}
             </div>
             <p className="text-xs text-gray-600 mt-0.5">
-              {getStatusDescription(statusConfig, currentSegment, totalSegments)}
+              {getStatusDescription(statusConfig, currentSegment, totalSegments, job)}
             </p>
           </div>
         </div>

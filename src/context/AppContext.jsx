@@ -10,22 +10,23 @@ export const AppContext = createContext();
 // Map frontend segmentation modes to backend enum values
 function mapSegmentationType(mode) {
   const segmentTypeMap = {
-    'manual': 'sentence',        // Manual segmentation → paragraph
+    'manual': 'sentence',
     'paragraph': 'paragraph',
     'sentence': 'sentence',
     'title': 'title',
     'clause': 'clause',
-    'fixed': 'fixed_length',      // Map 'fixed' to backend enum
+    'fixed': 'fixed_length',
     'fixed_length': 'fixed_length',
     '2line_pairs': '2line_pairs',
     'two_line_pairs': '2line_pairs',
+    'ai_statistical': 'ai_statistical',  // NEW
   };
   
-  return segmentTypeMap[mode] || 'paragraph'; // Default to 'paragraph' if unknown
+  return segmentTypeMap[mode] || 'paragraph';
 }
 // ==================== CONFIGURATION ====================
-const API_BASE_URL = 'http://192.99.245.215:8000'
 // const API_BASE_URL = 'http://192.99.245.215:8000'
+const API_BASE_URL = 'http://localhost:8000'
 
 // ==================== API CLIENT ====================
 class APIClient {
@@ -33,8 +34,27 @@ class APIClient {
     this.baseURL = baseURL;
   }
 
-  async request(endpoint, options = {}) {
+// ============================================================================
+// EXACT FIX for ERR_CONNECTION_RESET issue in AppContext.jsx
+// ============================================================================
+// Location: Line 30-90, inside the APIClient.request() method
+// Problem: Backend connection resets after 200 OK, before sending response body
+// Solution: Add timeout and better error handling for connection reset
+
+// REPLACE THIS SECTION (around line 47-58):
+
+async request(endpoint, options = {}) {
   const url = `${this.baseURL}${endpoint}`;
+  
+  console.log('🌐 API Request:', {
+    method: options.method || 'GET',
+    url: url,
+    bodyLength: options.body?.length
+  });
+  
+  // ADD: Abort controller for timeout
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 120000); // 120 second timeout
   
   try {
     const response = await fetch(url, {
@@ -43,12 +63,20 @@ class APIClient {
         'Content-Type': 'application/json',
         ...options.headers,
       },
+      signal: controller.signal  // ADD: Connect abort signal
+    });
+
+    clearTimeout(timeoutId);  // ADD: Clear timeout on success
+
+    console.log('🌐 API Response:', {
+      status: response.status,
+      statusText: response.statusText,
+      ok: response.ok
     });
 
     if (!response.ok) {
       const error = await response.json().catch(() => ({}));
       
-      // IMPROVED ERROR LOGGING
       console.error('❌ API Error Details:', {
         endpoint,
         status: response.status,
@@ -58,7 +86,6 @@ class APIClient {
         body: error.body
       });
       
-      // If it's a validation error, log the details
       if (error.detail && Array.isArray(error.detail)) {
         console.error('📋 Validation Errors:');
         error.detail.forEach(err => {
@@ -69,12 +96,32 @@ class APIClient {
       throw new Error(error.detail || `HTTP ${response.status}: ${response.statusText}`);
     }
 
-    return await response.json();
+    const data = await response.json();
+    console.log('🌐 API Response Data:', data);
+    return data;
   } catch (error) {
-    console.error(`API Error [${endpoint}]:`, error);
+    clearTimeout(timeoutId);  // ADD: Clear timeout on error
+    
+    // ADD: Better error messages for different error types
+    if (error.name === 'AbortError') {
+      console.error(`❌ API Timeout [${endpoint}]: Request exceeded 120 seconds`);
+      throw new Error(`Request timeout after 120s. Backend may still be processing. Endpoint: ${endpoint}`);
+    }
+    
+    if (error.message === 'Failed to fetch') {
+      console.error(`❌ Network Error [${endpoint}]: Connection failed or was reset`);
+      throw new Error(`Network error: Connection to backend failed. Check if backend is running at ${this.baseURL}`);
+    }
+    
+    console.error(`❌ API Error [${endpoint}]:`, error);
     throw error;
   }
 }
+
+// ============================================================================
+// THAT'S IT! This is the only change needed in frontend.
+// The real fix should be in backend to return job_id immediately.
+// ============================================================================
 // Add these methods to the APIClient class:
 
 // Advanced Analysis Endpoints
@@ -89,6 +136,62 @@ calculateStatisticalImprobability(decodedText, segmentLength, cipherMethod) {
   });
 }
 
+analyzeMultiEdition(request) {
+  console.log('🔥 API: analyzeMultiEdition called with:', request);
+  return this.request('/api/analysis/multi-edition', {
+    method: 'POST',
+    body: JSON.stringify(request),
+  }).then(response => {
+    console.log('🔥 API: analyzeMultiEdition response:', response);
+    return response;
+  }).catch(error => {
+    console.error('🔥 API: analyzeMultiEdition error:', error);
+    throw error;
+  });
+}
+
+
+createAISegmentation(workId, authorFolder, options = {}) {
+  return this.request('/api/segmentation/auto-create', {
+    method: 'POST',
+    body: JSON.stringify({
+      work_id: workId,
+      author_folder: authorFolder,
+      use_statistical: options.useStatistical !== false,
+      min_anomaly_score: options.minAnomalyScore || 3,
+      length_mode: options.lengthMode || 'variable',  // NEW: 'ultra_short', 'short', 'medium', 'long', 'variable', 'title_focused', 'custom'
+      custom_lengths: options.customLengths || null,  // NEW: [50, 100, 200] etc
+      overlap: options.overlap || 0                   // NEW: character overlap
+    }),
+  });
+}
+
+analyzeSegmentsWithAI(workId, options = {}) {
+  return this.request('/api/segmentation/ai-analyze', {
+    method: 'POST',
+    body: JSON.stringify({
+      work_id: workId,
+      max_segments: options.maxSegments || 20,
+      min_anomaly_score: options.minAnomalyScore || 3  // NEW: uses detector scoring
+    }),
+  });
+}
+
+prioritizeSegmentsWithAI(workId, options = {}) {
+  return this.request('/api/segmentation/ai-prioritize', {
+    method: 'POST',
+    body: JSON.stringify({
+      work_id: workId,
+      max_segments: options.maxSegments || 50,
+      min_score: options.minScore || 3  // NEW: uses detector scoring
+    }),
+  });
+}
+
+
+getWorkEditions(authorFolder, workId) {
+  return this.request(`/api/corpus/work/${authorFolder}/${workId}/editions`);
+}
 analyzeEntityClustering(decodedText, entities = null) {
   return this.request('/api/analysis/entity-clustering', {
     method: 'POST',
@@ -255,13 +358,16 @@ healthCheck() {
     return this.request('/api/corpus/authors');
   }
 
-  getWorksByAuthor(authorFolder) {
-    return this.request(`/api/corpus/authors/${authorFolder}/works`);
-  }
+getWorksByAuthor(authorFolder) {
+  return this.request(`/api/corpus/authors/${authorFolder}/works`);
+}
 
-  getWorkContent(authorFolder, workId) {
-    return this.request(`/api/corpus/work/${authorFolder}/${workId}`);
-  }
+getWorkContent(authorFolder, editionId, baseWorkId = null) {
+  // editionId is the specific edition to load (e.g., "01_tcp_1570_A Bull Granted")
+  // baseWorkId is optional, used for tracking the primary work
+  const actualId = editionId;
+  return this.request(`/api/corpus/work/${encodeURIComponent(authorFolder)}/${encodeURIComponent(actualId)}`);
+}
 
   saveWorkContent(workId, authorFolder, text) {
     return this.request('/api/corpus/work/save', {
@@ -349,6 +455,13 @@ export const ACTIONS = {
   SET_SELECTED_AUTHOR: 'SET_SELECTED_AUTHOR',
   SET_AVAILABLE_WORKS: 'SET_AVAILABLE_WORKS',
   SET_SELECTED_WORK: 'SET_SELECTED_WORK',
+
+    UPDATE_ANALYSIS_JOB: 'UPDATE_ANALYSIS_JOB',
+
+
+
+    SET_MULTI_EDITION_CONFIG: 'SET_MULTI_EDITION_CONFIG',
+  CLEAR_MULTI_EDITION_CONFIG: 'CLEAR_MULTI_EDITION_CONFIG',
   
   // Workspace
   SET_ACTIVE_SOURCE: 'SET_ACTIVE_SOURCE',
@@ -358,6 +471,10 @@ export const ACTIONS = {
   TOGGLE_BOUNDARY: 'TOGGLE_BOUNDARY',
   LOAD_SAVED_SEGMENTATION: 'LOAD_SAVED_SEGMENTATION',
   CLEAR_WORKSPACE: 'CLEAR_WORKSPACE',
+
+  SET_AI_SEGMENTATION_RESULT: 'SET_AI_SEGMENTATION_RESULT',
+  SET_AI_SEGMENT_ANALYSIS: 'SET_AI_SEGMENT_ANALYSIS',
+  SET_AI_PRIORITIZATION: 'SET_AI_PRIORITIZATION',
   
   // Analysis
   SET_SELECTED_STRATEGY: 'SET_SELECTED_STRATEGY',
@@ -420,6 +537,63 @@ function appReducer(state, action) {
           authors: action.payload,
         },
       };
+
+    case ACTIONS.UPDATE_ANALYSIS_JOB:
+  return {
+    ...state,
+    analyze: {
+      ...state.analyze,
+      currentJob: {
+        ...state.analyze.currentJob,
+        ...action.payload,
+      },
+    },
+  };
+case ACTIONS.SET_MULTI_EDITION_CONFIG:
+  return {
+    ...state,
+    workspace: {
+      ...state.workspace,
+      multiEditionConfig: action.payload,
+    },
+  };
+
+case ACTIONS.CLEAR_MULTI_EDITION_CONFIG:
+  return {
+    ...state,
+    workspace: {
+      ...state.workspace,
+      multiEditionConfig: null,
+    },
+  };
+    // Add to appReducer function:
+
+  case ACTIONS.SET_AI_SEGMENTATION_RESULT:
+    return {
+      ...state,
+      workspace: {
+        ...state.workspace,
+        aiSegmentationResult: action.payload,
+      },
+    };
+
+  case ACTIONS.SET_AI_SEGMENT_ANALYSIS:
+    return {
+      ...state,
+      workspace: {
+        ...state.workspace,
+        aiSegmentAnalysis: action.payload,
+      },
+    };
+
+  case ACTIONS.SET_AI_PRIORITIZATION:
+    return {
+      ...state,
+      workspace: {
+        ...state.workspace,
+        aiPrioritization: action.payload,
+      },
+    };
     case ACTIONS.SET_VIEW_MODE:
   return {
     ...state,
@@ -748,29 +922,31 @@ case ACTIONS.SET_PROGRESS_DASHBOARD:
         },
       };
 
-    case ACTIONS.START_ANALYSIS:
-      return {
-        ...state,
-        analyze: {
-          ...state.analyze,
-          currentJob: {
-            id: action.payload.job_id,
-            job_id: action.payload.job_id,
-            status: 'processing',
-            progress: 0,
-            currentSegment: 0,
-            totalSegments: action.payload.segments_count || 0,
-            startTime: Date.now(),
-            work_title: action.payload.work_title,
-          },
-        },
-        ui: {
-          ...state.ui,
-          activeView: 'analyze',
-        },
-      };
-
-    case ACTIONS.CANCEL_ANALYSIS:
+case ACTIONS.START_ANALYSIS:
+  console.log('🔥 REDUCER: START_ANALYSIS called with payload:', action.payload);
+  const newState = {
+    ...state,
+    analyze: {
+      ...state.analyze,
+      currentJob: {
+        id: action.payload.job_id,
+        job_id: action.payload.job_id,
+        status: 'processing',  // ← Change from 'queued' to 'processing'
+        progress: 0,
+        currentSegment: 0,
+        totalSegments: action.payload.segments_count || 0,
+        startTime: Date.now(),
+        work_title: action.payload.work_title,
+      },
+    },
+    ui: {
+      ...state.ui,
+      activeView: 'analyze',
+    },
+  };
+  console.log('🔥 REDUCER: New currentJob:', newState.analyze.currentJob);
+  return newState;
+  case ACTIONS.CANCEL_ANALYSIS:
       return {
         ...state,
         analyze: {
@@ -927,6 +1103,165 @@ const analyzeStatisticalImprobability = useCallback(async (decodedText, segmentL
   }
 }, [addNotification]);
 
+
+
+const createAISegmentation = useCallback(async (options = {}) => {
+  const currentSource = state.workspace.currentSource;
+  if (!currentSource?.id) {
+    addNotification('error', 'No work loaded');
+    return;
+  }
+
+  dispatch({ type: ACTIONS.SET_LOADING, payload: { key: 'aiSegmentation', value: true } });
+
+  try {
+    console.log('🔬 Starting statistical segmentation...', {
+      lengthMode: options.lengthMode || 'variable',
+      minAnomalyScore: options.minAnomalyScore || 3,
+      overlap: options.overlap || 0
+    });
+    
+    const response = await api.createAISegmentation(
+      currentSource.id,
+      currentSource.author_folder,
+      {
+        useStatistical: options.useStatistical !== false,
+        minAnomalyScore: options.minAnomalyScore || 3,
+        lengthMode: options.lengthMode || 'variable',      // NEW
+        customLengths: options.customLengths || null,      // NEW
+        overlap: options.overlap || 0                       // NEW
+      }
+    );
+    
+    const segmentation = response.segmentation;
+    console.log(`✅ Statistical Segmentation: ${segmentation.segments.length} anomalous segments detected`);
+    
+    // Show metadata about segment lengths if available
+    if (segmentation.metadata?.segment_lengths) {
+      console.log(`📊 Segment lengths tested: ${segmentation.metadata.segment_lengths.join(', ')}`);
+    }
+    
+    dispatch({ 
+      type: ACTIONS.SET_AI_SEGMENTATION_RESULT, 
+      payload: response 
+    });
+    
+    dispatch({ 
+      type: ACTIONS.LOAD_SAVED_SEGMENTATION, 
+      payload: segmentation 
+    });
+    
+    addNotification('success', 
+      `Statistical analysis found ${segmentation.segments.length} anomalous segments`, 
+      { duration: 5000 }
+    );
+    
+    return response;
+  } catch (error) {
+    console.error('Statistical segmentation error:', error);
+    addNotification('error', 'Statistical segmentation failed: ' + error.message);
+    throw error;
+  } finally {
+    dispatch({ type: ACTIONS.SET_LOADING, payload: { key: 'aiSegmentation', value: false } });
+  }
+}, [state.workspace.currentSource, addNotification]);
+
+
+
+
+// UPDATE analyzeSegmentsWithAI callback:
+
+const analyzeSegmentsWithAI = useCallback(async (options = {}) => {
+  const currentSource = state.workspace.currentSource;
+  if (!currentSource?.id) {
+    addNotification('error', 'No work loaded');
+    return;
+  }
+
+  dispatch({ type: ACTIONS.SET_LOADING, payload: { key: 'aiAnalysis', value: true } });
+
+  try {
+    console.log('📊 Running statistical analysis on segments...');
+    
+    const result = await api.analyzeSegmentsWithAI(currentSource.id, {
+      maxSegments: options.maxSegments || 20,
+      minAnomalyScore: options.minAnomalyScore || 3
+    });
+    
+    dispatch({ 
+      type: ACTIONS.SET_AI_SEGMENT_ANALYSIS, 
+      payload: result 
+    });
+    
+    const summary = result.summary || {};
+    const highPriority = summary.high_priority || 0;
+    const mediumPriority = summary.medium_priority || 0;
+    const lowPriority = summary.low_priority || 0;
+    
+    console.log(`✅ Analysis complete:`, {
+      high: highPriority,
+      medium: mediumPriority,
+      low: lowPriority
+    });
+    
+    addNotification('success', 
+      `Statistical analysis: ${highPriority} high-priority, ${mediumPriority} medium-priority segments`,
+      { duration: 5000 }
+    );
+    
+    return result;
+  } catch (error) {
+    console.error('Statistical analysis error:', error);
+    addNotification('error', 'Statistical analysis failed: ' + error.message);
+    throw error;
+  } finally {
+    dispatch({ type: ACTIONS.SET_LOADING, payload: { key: 'aiAnalysis', value: false } });
+  }
+}, [state.workspace.currentSource, addNotification]);
+
+// UPDATE prioritizeSegmentsWithAI callback:
+
+const prioritizeSegmentsWithAI = useCallback(async (options = {}) => {
+  const currentSource = state.workspace.currentSource;
+  if (!currentSource?.id) {
+    addNotification('error', 'No work loaded');
+    return;
+  }
+
+  dispatch({ type: ACTIONS.SET_LOADING, payload: { key: 'aiPrioritization', value: true } });
+
+  try {
+    console.log('🎯 Prioritizing segments from database...');
+    
+    const result = await api.prioritizeSegmentsWithAI(currentSource.id, {
+      maxSegments: options.maxSegments || 50,
+      minScore: options.minScore || 3
+    });
+    
+    dispatch({ 
+      type: ACTIONS.SET_AI_PRIORITIZATION, 
+      payload: result 
+    });
+    
+    const summary = result.summary || {};
+    console.log(`✅ Prioritization complete:`, summary);
+    
+    addNotification('success', 
+      `Prioritized ${result.segments_evaluated || 0} segments from statistical database`,
+      { duration: 4000 }
+    );
+    
+    return result;
+  } catch (error) {
+    console.error('Prioritization error:', error);
+    addNotification('error', 'Prioritization failed: ' + error.message);
+    throw error;
+  } finally {
+    dispatch({ type: ACTIONS.SET_LOADING, payload: { key: 'aiPrioritization', value: false } });
+  }
+}, [state.workspace.currentSource, addNotification]);
+
+
 const analyzeEntityClustering = useCallback(async (decodedText, entities = null) => {
   try {
     const result = await api.analyzeEntityClustering(decodedText, entities);
@@ -974,17 +1309,29 @@ const compareWorks = useCallback(async (workIds, metrics) => {
 }, [addNotification]);
 
 // Multi-Edition Functions
+// In AppProvider component, add this callback:
+
 const analyzeMultiEdition = useCallback(async (request) => {
   try {
-    const result = await api.analyzeMultipleEditions(request);
-    dispatch({ type: ACTIONS.SET_MULTI_EDITION_RESULTS, payload: result });
-    addNotification('success', `Analyzed ${result.editions_analyzed} editions`);
+    dispatch({ type: ACTIONS.SET_LOADING, payload: { key: 'analysis', value: true } });
+    
+    const result = await api.analyzeMultiEdition(request);
+    
+    dispatch({ 
+      type: ACTIONS.SET_MULTI_EDITION_RESULTS, 
+      payload: result 
+    });
+    
+    addNotification('success', `✅ Multi-edition analysis complete: ${result.editions_analyzed} editions analyzed`);
+    
     return result;
   } catch (error) {
     addNotification('error', 'Multi-edition analysis failed: ' + error.message);
     throw error;
+  } finally {
+    dispatch({ type: ACTIONS.SET_LOADING, payload: { key: 'analysis', value: false } });
   }
-}, [addNotification]);
+}, [addNotification, api, dispatch]);
 
 const compareEditions = useCallback(async (request) => {
   try {
@@ -1071,80 +1418,119 @@ const getProgressDashboard = useCallback(async () => {
     });
   }, []);
 
-  const selectAuthor = useCallback(async (authorFolder) => {
-    dispatch({ type: ACTIONS.SET_SELECTED_AUTHOR, payload: authorFolder });
-    dispatch({ type: ACTIONS.SET_LOADING, payload: { key: 'works', value: true } });
+const selectAuthor = useCallback(async (authorFolder) => {
+  dispatch({ type: ACTIONS.SET_SELECTED_AUTHOR, payload: authorFolder });
+  dispatch({ type: ACTIONS.SET_LOADING, payload: { key: 'works', value: true } });
+  
+  try {
+    const works = await api.getWorksByAuthor(authorFolder);
+    console.log(`✅ Loaded ${works.length} works for ${authorFolder}`);
+    console.log('📊 Sample work data:', works[0]); // DEBUG: See what data we're getting
     
-    try {
-      const works = await api.getWorksByAuthor(authorFolder);
-      console.log(`✅ Loaded ${works.length} works for ${authorFolder}`);
-      dispatch({ type: ACTIONS.SET_AVAILABLE_WORKS, payload: works });
-    } catch (error) {
-      addNotification('error', 'Failed to load works: ' + error.message);
-    } finally {
-      dispatch({ type: ACTIONS.SET_LOADING, payload: { key: 'works', value: false } });
-    }
-  }, [addNotification]);
-
-  const loadWork = useCallback(async (authorFolder, workId) => {
-    dispatch({ type: ACTIONS.SET_LOADING, payload: { key: 'work', value: true } });
+    // Check if backend is returning edition_count
+    const hasEditionCount = works.some(w => w.edition_count !== undefined);
+    console.log('📚 Works have edition_count?', hasEditionCount); // DEBUG
     
-    try {
-      const content = await api.getWorkContent(authorFolder, workId);
-      console.log(`✅ Loaded work: ${content.title} (${content.line_count} lines)`);
-      
-      dispatch({ type: ACTIONS.CANCEL_ANALYSIS });
-      
-      dispatch({ 
-        type: ACTIONS.SET_ACTIVE_SOURCE, 
-        payload: {
-          ...content,
-          author_folder: authorFolder
-        }
+    if (!hasEditionCount) {
+      console.warn('⚠️ Backend not returning edition_count, adding placeholder...');
+      // If backend doesn't have it yet, add placeholder
+      works.forEach(work => {
+        work.edition_count = 1;
+        work.has_multiple_editions = false;
       });
-      
-      try {
-        const segmentation = await api.getSegmentation(workId);
-        if (segmentation?.segments?.length > 0) {
-          console.log(`✅ Loaded saved segmentation: ${segmentation.segments.length} segments`);
-          
-          const boundaries = [0];
-          segmentation.segments.forEach(seg => {
-            boundaries.push(seg.end_line + 1);
-          });
-          
-          if (boundaries[boundaries.length - 1] !== content.lines.length) {
-            boundaries.push(content.lines.length);
-          }
-          
-          dispatch({ 
-            type: ACTIONS.LOAD_SAVED_SEGMENTATION, 
-            payload: {
-              segments: segmentation.segments,
-              boundaries: boundaries
-            }
-          });
-          
-          addNotification('info', `Loaded ${segmentation.segments.length} segments`);
-        }
-      } catch (err) {
-        console.log('No saved segmentation found');
-      }
-      
-      dispatch({ type: ACTIONS.SET_SELECTED_WORK, payload: content });
-      dispatch({ type: ACTIONS.SET_ACTIVE_VIEW, payload: 'workspace' });
-      addNotification('success', `Loaded: ${content.title}`);
-      
-      return content;
-    } catch (error) {
-      addNotification('error', 'Failed to load work: ' + error.message);
-      throw error;
-    } finally {
-      dispatch({ type: ACTIONS.SET_LOADING, payload: { key: 'work', value: false } });
     }
-  }, [addNotification]);
+    
+    dispatch({ type: ACTIONS.SET_AVAILABLE_WORKS, payload: works });
+  } catch (error) {
+    addNotification('error', 'Failed to load works: ' + error.message);
+  } finally {
+    dispatch({ type: ACTIONS.SET_LOADING, payload: { key: 'works', value: false } });
+  }
+}, [addNotification, api, dispatch]);
 
-  const saveWorkText = useCallback(async (workId, authorFolder, text) => {
+// Update the loadWork function to properly handle edition_count:
+
+const loadWork = useCallback(async (authorFolder, workId, selectedEdition = null) => {
+  dispatch({ type: ACTIONS.SET_LOADING, payload: { key: 'work', value: true } });
+  
+  try {
+    // Determine which edition to load
+    const editionToLoad = selectedEdition?.id || workId;
+    
+    console.log(`📖 Loading work: ${workId}${selectedEdition ? ` (Edition: ${selectedEdition.date})` : ''}`);
+    
+    // Load the edition content
+    const content = await api.getWorkContent(authorFolder, editionToLoad);
+    console.log(`✅ Loaded work: ${content.title} (${content.line_count} lines)`);
+    
+    // Get the original work from availableWorks to preserve edition_count
+    const originalWork = state.library.availableWorks.find(w => w.id === workId);
+    
+    // Cancel any running analysis
+    dispatch({ type: ACTIONS.CANCEL_ANALYSIS });
+    
+    // Set active source with edition metadata AND edition_count preserved
+    dispatch({ 
+      type: ACTIONS.SET_ACTIVE_SOURCE, 
+      payload: {
+        ...content,
+        author_folder: authorFolder,
+        base_work_id: workId, // Store the base work ID (primary edition ID)
+        edition_count: originalWork?.edition_count || 1,  // ← PRESERVE THIS!
+        selected_edition: selectedEdition || {
+          id: editionToLoad,
+          date: content.date,
+          isPrimary: editionToLoad === workId
+        }
+      }
+    });
+    
+    // Try to load saved segmentation for THIS SPECIFIC EDITION
+    try {
+      const segmentation = await api.getSegmentation(editionToLoad);
+      if (segmentation?.segments?.length > 0) {
+        console.log(`✅ Loaded saved segmentation: ${segmentation.segments.length} segments for edition ${editionToLoad}`);
+        
+        const boundaries = [0];
+        segmentation.segments.forEach(seg => {
+          boundaries.push(seg.end_line + 1);
+        });
+        
+        if (boundaries[boundaries.length - 1] !== content.lines.length) {
+          boundaries.push(content.lines.length);
+        }
+        
+        dispatch({ 
+          type: ACTIONS.LOAD_SAVED_SEGMENTATION, 
+          payload: {
+            segments: segmentation.segments,
+            boundaries: boundaries
+          }
+        });
+        
+        const editionLabel = selectedEdition ? ` for ${selectedEdition.date} edition` : '';
+        addNotification('info', `Loaded ${segmentation.segments.length} segments${editionLabel}`);
+      }
+    } catch (err) {
+      console.log(`ℹ️  No saved segmentation found for edition ${editionToLoad}`);
+    }
+    
+    // Set selected work
+    dispatch({ type: ACTIONS.SET_SELECTED_WORK, payload: content });
+    dispatch({ type: ACTIONS.SET_ACTIVE_VIEW, payload: 'workspace' });
+    
+    const editionLabel = selectedEdition ? ` (${selectedEdition.date} edition)` : '';
+    addNotification('success', `Loaded: ${content.title}${editionLabel}`);
+    
+    return content;
+  } catch (error) {
+    addNotification('error', 'Failed to load work: ' + error.message);
+    throw error;
+  } finally {
+    dispatch({ type: ACTIONS.SET_LOADING, payload: { key: 'work', value: false } });
+  }
+}, [addNotification, api, dispatch, state.library.availableWorks]);
+const saveWorkText = useCallback(async (workId, authorFolder, text) => {
     try {
       await api.saveWorkContent(workId, authorFolder, text);
       addNotification('success', 'Text saved successfully');
@@ -1194,72 +1580,114 @@ const getProgressDashboard = useCallback(async () => {
     }
   }, [state.workspace.currentSource, addNotification]);
 
-  const saveSegmentation = useCallback(async () => {
-    const { currentSource, segments, boundaries } = state.workspace;
-    
-    if (!currentSource?.id) {
-      addNotification('error', 'No work loaded');
+const saveSegmentation = useCallback(async () => {
+  const { currentSource, segments, boundaries } = state.workspace;
+  
+  if (!currentSource?.id) {
+    addNotification('error', 'No work loaded');
+    return;
+  }
+
+  let segmentsToSave = segments;
+  
+  if (!segments?.length || !segments[0]?.text) {
+    if (!boundaries || !currentSource.lines) {
+      addNotification('error', 'Cannot create segments: missing boundaries or lines');
       return;
     }
-
-    let segmentsToSave = segments;
     
-    if (!segments?.length || !segments[0]?.text) {
-      if (!boundaries || !currentSource.lines) {
-        addNotification('error', 'Cannot create segments: missing boundaries or lines');
-        return;
-      }
+    segmentsToSave = boundaries.slice(0, -1).map((start, i) => {
+      const end = boundaries[i + 1];
+      const segmentLines = currentSource.lines.slice(start, end);
       
-      segmentsToSave = boundaries.slice(0, -1).map((start, i) => {
-        const end = boundaries[i + 1];
-        const segmentLines = currentSource.lines.slice(start, end);
-        
-        return {
-          id: `segment_${start}_${end}`,
-          name: `Lines ${start + 1}-${end}`,
-          start_line: start,
-          end_line: end - 1,
-          text: segmentLines.join('\n'),
-          lines: segmentLines
-        };
-      });
-    }
+      return {
+        id: `segment_${start}_${end}`,
+        name: `Lines ${start + 1}-${end}`,
+        start_line: start,
+        end_line: end - 1,
+        text: segmentLines.join('\n'),
+        lines: segmentLines
+      };
+    });
+  }
 
-    if (segmentsToSave.length === 0) {
-      addNotification('error', 'No segments to save');
-      return;
-    }
+  if (segmentsToSave.length === 0) {
+    addNotification('error', 'No segments to save');
+    return;
+  }
 
-    const segmentationPayload = {
-      work_id: currentSource.id,
-      work_title: currentSource.title || 'Unknown',
-      author: currentSource.author || 'Unknown',
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-      segments: segmentsToSave.map(seg => ({
-        id: String(seg.id),
-        name: String(seg.name),
-        start_line: Number(seg.start_line),
-        end_line: Number(seg.end_line),
-        text: String(seg.text || ''),
-        lines: Array.isArray(seg.lines) ? seg.lines.map(l => String(l)) : []
-      })),
-      metadata: {
-        boundaries: boundaries,
-        total_lines: currentSource.line_count || currentSource.lines?.length || 0
+  // CRITICAL: Use the current edition's ID (not base_work_id)
+  // This ensures each edition gets its own segmentation file
+  const editionId = currentSource.selected_edition?.id || currentSource.id;
+  
+  const segmentationPayload = {
+    work_id: editionId,  // ← Save with edition-specific ID!
+    work_title: currentSource.title || 'Unknown',
+    author: currentSource.author || 'Unknown',
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+    segments: segmentsToSave.map(seg => ({
+      id: String(seg.id),
+      name: String(seg.name),
+      start_line: Number(seg.start_line),
+      end_line: Number(seg.end_line),
+      text: String(seg.text || ''),
+      lines: Array.isArray(seg.lines) ? seg.lines.map(l => String(l)) : []
+    })),
+    metadata: {
+      edition_id: editionId,
+      base_work_id: currentSource.base_work_id,
+      edition_date: currentSource.selected_edition?.date,
+      is_primary: currentSource.selected_edition?.isPrimary,
+      boundaries: boundaries,
+      total_lines: currentSource.line_count || currentSource.lines?.length || 0
+    }
+  };
+
+  console.log(`💾 Saving segmentation for edition: ${editionId}`);
+
+  try {
+    await api.saveSegmentation(segmentationPayload);
+    dispatch({ type: ACTIONS.SET_UNSAVED_CHANGES, payload: false });
+    
+    const editionLabel = currentSource.selected_edition?.date 
+      ? ` (${currentSource.selected_edition.date} edition)` 
+      : '';
+    
+    addNotification('success', `Saved ${segmentationPayload.segments.length} segments${editionLabel}`);
+  } catch (error) {
+    addNotification('error', 'Failed to save segmentation: ' + error.message);
+    throw error;
+  }
+}, [state.workspace, addNotification, api, dispatch]);
+const loadAllEditions = useCallback(async (authorFolder, baseWorkId) => {
+  dispatch({ type: ACTIONS.SET_LOADING, payload: { key: 'editions', value: true } });
+  
+  try {
+    console.log(`📚 Loading all editions for: ${baseWorkId}`);
+    
+    const response = await api.getWorkEditions(authorFolder, baseWorkId);
+    
+    console.log(`✅ Found ${response.total_editions} editions`);
+    console.log(`📊 Editions with segmentations: ${response.editions_with_segmentations}`);
+    
+    // Log each edition's segmentation status
+    response.editions.forEach(ed => {
+      if (ed.has_segmentation) {
+        console.log(`  ✅ ${ed.id}: ${ed.segment_count} segments`);
+      } else {
+        console.log(`  ℹ️  ${ed.id}: no segmentation`);
       }
-    };
-
-    try {
-      await api.saveSegmentation(segmentationPayload);
-      dispatch({ type: ACTIONS.SET_UNSAVED_CHANGES, payload: false });
-      addNotification('success', `Saved ${segmentationPayload.segments.length} segments`);
-    } catch (error) {
-      addNotification('error', 'Failed to save segmentation: ' + error.message);
-      throw error;
-    }
-  }, [state.workspace, addNotification]);
-
+    });
+    
+    return response;
+  } catch (error) {
+    addNotification('error', 'Failed to load editions: ' + error.message);
+    throw error;
+  } finally {
+    dispatch({ type: ACTIONS.SET_LOADING, payload: { key: 'editions', value: false } });
+  }
+}, [addNotification, api, dispatch]);
   const loadSegmentation = useCallback(async (workId) => {
     try {
       const segmentation = await api.getSegmentation(workId);
@@ -1284,156 +1712,370 @@ const getProgressDashboard = useCallback(async () => {
     }
   }, [addNotification]);
 
-  const startAnalysis = useCallback(async () => {
-  const { workspace, analyze } = state;
-  
-  if (!workspace.currentSource?.id) {
-    addNotification('error', 'No work loaded');
-    return;
-  }
+// Add pollJobStatus with useCallback
 
-  if (!analyze.selectedStrategy) {
-    addNotification('error', 'Please select an analysis strategy');
-    return;
+const pollJobStatus = useCallback(async (jobId) => {
+  try {
+    // Use the api client instead of raw fetch
+    const jobData = await api.getJobStatus(jobId);
+    
+    dispatch({
+      type: ACTIONS.UPDATE_ANALYSIS_JOB,
+      payload: jobData
+    });
+    
+    // Continue polling if job is still running
+    if (['queued', 'processing', 'paused'].includes(jobData.status)) {
+      setTimeout(() => pollJobStatus(jobId), 1000);
+    }
+  } catch (error) {
+    console.error('Error polling job status:', error);
   }
+}, []);
 
-  let validSegments = workspace.segments;
+// ✅ ADD THIS NEW FUNCTION HERE
+const startPollingJobStatus = useCallback((jobId) => {
+  console.log('🔄 Starting job status polling:', jobId);
   
-  if (!validSegments?.length || !validSegments[0]?.text) {
-    if (!workspace.boundaries?.length >= 2 || !workspace.currentSource.lines) {
-      addNotification('error', 'No segments defined. Please create segments first.');
+  // Start polling immediately
+  pollJobStatus(jobId);
+  
+  // Set up interval for continuous polling
+  const pollInterval = setInterval(() => {
+    const currentJob = state.analyze.currentJob;
+    
+    // Stop polling if job is complete or failed
+    if (!currentJob || ['completed', 'failed'].includes(currentJob.status)) {
+      console.log('✅ Stopping polling - job finished');
+      clearInterval(pollInterval);
       return;
     }
     
-    validSegments = workspace.boundaries.slice(0, -1).map((start, i) => {
-      const end = workspace.boundaries[i + 1];
-      const segmentLines = workspace.currentSource.lines.slice(start, end);
-      
-      return {
-        id: `segment_${start}_${end}`,
-        name: `Lines ${start + 1}-${end}`,
-        start_line: start,
-        end_line: end - 1,
-        text: segmentLines.join('\n'),
-        lines: segmentLines
-      };
-    });
+    // Continue polling
+    pollJobStatus(jobId);
+  }, 1000); // Poll every 1 second
+  
+  // Store interval ID so we can cancel it later if needed
+  return pollInterval;
+}, [pollJobStatus, state.analyze.currentJob]);
+
+
+const startAnalysis = useCallback(async () => {
+  console.log('🚀 START ANALYSIS CLICKED');
+  
+  // Check if multi-edition mode
+  const isMultiEdition = state.workspace.multiEditionConfig?.isMultiEdition;
+  
+  // ========================================
+  // MULTI-EDITION ANALYSIS
+  // ========================================
+  if (isMultiEdition) {
+    console.log('🚀 Starting multi-edition analysis...');
+    
+    const multiConfig = state.workspace.multiEditionConfig;
+    const workTitle = multiConfig.workTitle;
+    const viewMode = state.analyze.viewMode || 'standard';
+    
+    console.log('   Work:', workTitle);
+    console.log('   Editions:', multiConfig.selectedEditions.length);
+    console.log('   Total segments:', multiConfig.totalSegments);
+    
+    // Build edition configs with segmentation data
+    const editionConfigs = {};
+    let totalSegments = 0;
+    
+// NEW CODE (FIXED):
+for (const editionId of multiConfig.selectedEditions) {
+  const editionData = multiConfig.editionData[editionId];
+  
+  // Validate edition data exists
+  if (!editionData) {
+    console.error(`❌ Missing edition data for: ${editionId}`);
+    continue;
   }
+  
+  console.log(`   Edition ${editionId}: ${editionData.segments?.length || 0} segments`);
+  
+  // CRITICAL: Use edition ID as key (not editionName)
+  // Ensure segments are in proper format with all required fields
+  editionConfigs[editionId] = {
+    file: editionData.id || editionId,
+    author_folder: multiConfig.authorFolder,
+    priority: 1,
+    use_statistical: editionData.useStatistical || false,
+    manual_segments: (editionData.segments || []).map(seg => ({
+      id: seg.id,
+      name: seg.name,
+      start_line: seg.start_line,
+      end_line: seg.end_line,
+      start_char: seg.start_char,
+      end_char: seg.end_char,
+      text: seg.text,
+      lines: seg.lines || [],
+      metadata: seg.metadata || {}
+    }))
+  };
+  
+  totalSegments += editionData.segments?.length || 0;
+}
 
-  const segmentsWithText = validSegments
+console.log('📊 Built edition configs:', Object.keys(editionConfigs));
+console.log('📊 Total editions:', multiConfig.selectedEditions.length);
 
-  if (segmentsWithText.length === 0) {
-    addNotification('error', 'All segments have insufficient text (need 50+ letters)');
+// Debug log first config to verify structure
+if (Object.keys(editionConfigs).length > 0) {
+  const firstConfigKey = Object.keys(editionConfigs)[0];
+  const firstConfig = editionConfigs[firstConfigKey];
+  console.log('📦 Sample config structure:', {
+    key: firstConfigKey,
+    file: firstConfig.file,
+    segment_count: firstConfig.manual_segments?.length || 0,
+    first_segment_keys: firstConfig.manual_segments?.[0] ? Object.keys(firstConfig.manual_segments[0]) : []
+  });
+}
+    
+    console.log('📊 Built edition configs:', Object.keys(editionConfigs));
+    console.log('📊 Total editions:', multiConfig.selectedEditions.length);
+    
+    // Build API request
+    const multiEditionPayload = {
+      author: multiConfig.author,
+      author_folder: multiConfig.authorFolder,
+      work_title: workTitle,
+      edition_configs: editionConfigs,
+      view_mode: viewMode,
+      expected_entities: state.analyze.filters?.entities || [],
+      expected_themes: [],
+      use_statistical_segmentation: false,
+      min_anomaly_score: 3,
+      length_mode: 'variable',
+      min_confidence: parseFloat(state.analyze.filters?.minConfidence || 15.0),
+      max_results_per_method: 100,
+      use_ai_enhancement: false
+    };
+    
+    console.log('📦 Multi-edition request:', {
+      editions: multiConfig.selectedEditions.length,
+      view_mode: viewMode,
+      total_segments: totalSegments
+    });
+    
+    try {
+      dispatch({ type: ACTIONS.SET_LOADING, payload: { key: 'analysis', value: true } });
+      
+      console.log('📡 Calling api.analyzeMultiEdition...');
+      
+      // Call API
+      const response = await api.analyzeMultiEdition(multiEditionPayload);
+      
+      console.log('✅ Multi-edition API response:', response);
+      
+      // Check if job_id exists
+      if (!response.job_id) {
+        throw new Error('No job_id returned from API');
+      }
+      
+      console.log('📝 Setting current job:', response.job_id);
+      
+      // SET CURRENT JOB - This is what makes the ProgressTracker appear
+      dispatch({
+        type: ACTIONS.SET_CURRENT_JOB,
+        payload: {
+          job_id: response.job_id,
+          status: 'processing',
+          work_title: workTitle,
+          author: multiConfig.author,
+          segments_count: totalSegments,
+          view_mode: viewMode,
+          created_at: new Date().toISOString(),
+          progress: 0,
+          total_segments: totalSegments,
+          filtered_count: 0,
+          is_multi_edition: true,
+          edition_count: multiConfig.selectedEditions.length,
+          editions: multiConfig.selectedEditions
+        }
+      });
+      
+      // Start polling for status updates
+      console.log('🔄 Starting status polling for job:', response.job_id);
+      startPollingJobStatus(response.job_id);
+      
+      dispatch({
+        type: ACTIONS.ADD_NOTIFICATION,
+        payload: {
+          type: 'success',
+          title: 'Multi-Edition Analysis Started',
+          message: `Analyzing ${multiConfig.selectedEditions.length} editions with ${totalSegments} total segments`
+        }
+      });
+      
+    } catch (error) {
+      console.error('❌ Multi-edition analysis error:', error);
+      
+      dispatch({
+        type: ACTIONS.ADD_NOTIFICATION,
+        payload: {
+          type: 'error',
+          title: 'Analysis Failed',
+          message: error.message || 'Failed to start multi-edition analysis'
+        }
+      });
+      
+      dispatch({ type: ACTIONS.SET_LOADING, payload: { key: 'analysis', value: false } });
+    }
+    
+    return; // Exit early for multi-edition
+  }
+  
+  // ========================================
+  // SINGLE EDITION ANALYSIS
+  // ========================================
+  console.log('🚀 Starting single-edition analysis...');
+  
+  // Validate source
+  if (!state.workspace.currentSource) {
+    dispatch({
+      type: ACTIONS.ADD_NOTIFICATION,
+      payload: {
+        type: 'error',
+        title: 'No Source Selected',
+        message: 'Please select a source in the Workspace'
+      }
+    });
     return;
   }
-
-  if (segmentsWithText.length < 1) {
-    const skipped = validSegments.length - segmentsWithText.length;
-    addNotification('warning', `Analyzing ${segmentsWithText.length} segments (${skipped} skipped)`);
-  }
-
-  console.log(`🔬 Starting analysis: ${workspace.currentSource.title}`);
-
- const analysisRequest = {
-  work_id: String(workspace.currentSource.id),
-  work_title: String(workspace.currentSource.title || 'Unknown'),
-  author: String(workspace.currentSource.author || 'Unknown'),
-  segments: segmentsWithText.map(seg => ({
-    id: String(seg.id),
-    name: String(seg.name),
-    start_line: Number(seg.start_line),
-    end_line: Number(seg.end_line),
-    text: String(seg.text),
-    lines: Array.isArray(seg.lines) ? seg.lines.map(l => String(l)) : []
-  })),
   
-  // FIX: Map segmentation mode to valid backend values
-  segment_type: mapSegmentationType(workspace.segmentationMode),
-  view_mode: analyze.selectedStrategy || 'standard',
-  use_ai_enhancement: false,
-  run_full_pipeline: true
-  };
-  console.log('🔍 Current segmentationMode:', workspace.segmentationMode);
-
-
-  // DETAILED LOGGING BEFORE API CALL
-  console.log('📤 Analysis Request:', {
-    work_id: analysisRequest.work_id,
-    work_title: analysisRequest.work_title,
-    author: analysisRequest.author,
-    segment_count: analysisRequest.segments.length,
-    segment_type: analysisRequest.segment_type,
-    view_mode: analysisRequest.view_mode,
-    use_ai_enhancement: analysisRequest.use_ai_enhancement,
-    run_full_pipeline: analysisRequest.run_full_pipeline,
-    first_segment: analysisRequest.segments[0], // Log first segment for inspection
-  });
-
-  dispatch({ type: ACTIONS.SET_LOADING, payload: { key: 'analysis', value: true } });
-
+  // Validate segments
+  const currentSegments = state.workspace.segments || [];
+  
+  if (currentSegments.length === 0) {
+    dispatch({
+      type: ACTIONS.ADD_NOTIFICATION,
+      payload: {
+        type: 'error',
+        title: 'No Segments',
+        message: 'Please create segments before starting analysis'
+      }
+    });
+    return;
+  }
+  
+  // Validate view mode
+  const viewMode = state.analyze.viewMode;
+  if (!viewMode) {
+    dispatch({
+      type: ACTIONS.ADD_NOTIFICATION,
+      payload: {
+        type: 'error',
+        title: 'No View Mode',
+        message: 'Please select a view mode'
+      }
+    });
+    return;
+  }
+  
   try {
-    const job = await api.startAnalysis(analysisRequest);
+    dispatch({ type: ACTIONS.SET_LOADING, payload: { key: 'analysis', value: true } });
     
-    console.log(`✅ Analysis job created: ${job.job_id}`);
+    // Build single-edition request payload
+    const requestPayload = {
+      work_id: state.workspace.currentSource.id,
+      work_title: state.workspace.currentSource.title,
+      author: state.workspace.currentSource.author,
+      segments: currentSegments.map(seg => ({
+        id: seg.id,
+        name: seg.name,
+        start_line: seg.start_line,
+        end_line: seg.end_line,
+        start_char: seg.start_char,
+        end_char: seg.end_char,
+        text: seg.text,
+        lines: seg.lines
+      })),
+      segment_type: 'manual',
+      view_mode: viewMode,
+      spoilage_threshold: state.analyze.filters?.spoilageLevel || null,
+      word_filter: state.analyze.filters?.wordFilter || null,
+      use_ai_enhancement: state.analyze.useAI || false,
+      run_full_pipeline: true,
+      max_texts: null,
+      enable_chat_assistance: false,
+      use_statistical_segmentation: false,
+      min_anomaly_score: 3,
+      length_mode: 'variable',
+      custom_lengths: null,
+      overlap: 0,
+      min_confidence: parseFloat(state.analyze.filters?.minConfidence || 15.0),
+      max_results_per_method: 100
+    };
     
-          
-      dispatch({
-        type: ACTIONS.START_ANALYSIS,
-        payload: job,
-      });
-
-      addNotification('info', `Analysis started: ${job.segments_count} segments`);
-
-      const pollInterval = setInterval(async () => {
-        try {
-          const status = await api.getJobStatus(job.job_id);
-          
-          dispatch({
-            type: ACTIONS.UPDATE_JOB_PROGRESS,
-            payload: {
-              progress: status.progress || 0,
-              currentSegment: status.current_segment || 0,
-              status: status.status,
-            },
-          });
-
-          if (status.status === 'completed') {
-            clearInterval(pollInterval);
-            
-            const result = await api.getJobResults(job.job_id);
-            const patterns = transformResultsToPatterns(result);
-            
-            dispatch({ 
-              type: ACTIONS.SET_RESULTS, 
-              payload: {
-                patterns: patterns,
-                lastJobId: job.job_id
-              }
-            });
-            
-            dispatch({ type: ACTIONS.SET_ACTIVE_VIEW, payload: 'results' });
-            dispatch({ type: ACTIONS.SET_LOADING, payload: { key: 'analysis', value: false } });
-            
-            addNotification('success', `Analysis complete: ${patterns.length} results`);
-          }
-          else if (status.status === 'failed') {
-            clearInterval(pollInterval);
-            dispatch({ type: ACTIONS.SET_LOADING, payload: { key: 'analysis', value: false } });
-            addNotification('error', 'Analysis failed: ' + (status.error || 'Unknown error'));
-          }
-        } catch (error) {
-          clearInterval(pollInterval);
-          dispatch({ type: ACTIONS.SET_LOADING, payload: { key: 'analysis', value: false } });
-          addNotification('error', 'Failed to check status: ' + error.message);
-        }
-      }, 2000);
-
-    } catch (error) {
-      dispatch({ type: ACTIONS.SET_LOADING, payload: { key: 'analysis', value: false } });
-      addNotification('error', 'Failed to start analysis: ' + error.message);
+    console.log('📡 Calling api.analyzeText...');
+    console.log('📦 Single-edition request:', {
+      work_id: requestPayload.work_id,
+      segments: currentSegments.length,
+      view_mode: viewMode
+    });
+    
+    // Call API
+    const jobResponse = await api.analyzeText(requestPayload);
+    
+    console.log('✅ Single-edition API response:', jobResponse);
+    
+    // Check if job_id exists
+    if (!jobResponse.job_id) {
+      throw new Error('No job_id returned from API');
     }
-  }, [state, addNotification]);
-
+    
+    console.log('📝 Setting current job:', jobResponse.job_id);
+    
+    // SET CURRENT JOB - This is what makes the ProgressTracker appear
+    dispatch({
+      type: ACTIONS.SET_CURRENT_JOB,
+      payload: {
+        job_id: jobResponse.job_id,
+        status: jobResponse.status || 'processing',
+        work_title: jobResponse.work_title,
+        author: state.workspace.currentSource.author,
+        segments_count: jobResponse.segments_count,
+        view_mode: jobResponse.view_mode,
+        created_at: jobResponse.created_at,
+        progress: 0,
+        total_segments: currentSegments.length,
+        filtered_count: 0,
+        is_multi_edition: false
+      }
+    });
+    
+    // Start polling for status updates
+    console.log('🔄 Starting status polling for job:', jobResponse.job_id);
+    startPollingJobStatus(jobResponse.job_id);
+    
+    dispatch({
+      type: ACTIONS.ADD_NOTIFICATION,
+      payload: {
+        type: 'success',
+        title: 'Analysis Started',
+        message: `Processing ${currentSegments.length} segments`
+      }
+    });
+    
+  } catch (error) {
+    console.error('❌ Single-edition analysis error:', error);
+    
+    dispatch({
+      type: ACTIONS.ADD_NOTIFICATION,
+      payload: {
+        type: 'error',
+        title: 'Analysis Failed',
+        message: error.message || 'Failed to start analysis'
+      }
+    });
+    
+    dispatch({ type: ACTIONS.SET_LOADING, payload: { key: 'analysis', value: false } });
+  }
+  
+}, [state.workspace, state.analyze, dispatch]);
   const exportResults = useCallback((format = 'json') => {
     const jobId = state.analyze.currentJob?.job_id || state.results.lastJobId;
     
@@ -1545,7 +2187,9 @@ const getProgressDashboard = useCallback(async () => {
   }, [state.ui.notifications]);
 
   // ==================== CONTEXT VALUE ====================
-  const value = {
+  // Update the value object to include new functions:
+
+const value = {
   state,
   dispatch,
   api,
@@ -1554,6 +2198,7 @@ const getProgressDashboard = useCallback(async () => {
   toggleModal,
   selectAuthor,
   loadWork,
+  loadAllEditions,  // ← NEW
   saveWorkText,
   createAutoSegmentation,
   saveSegmentation,
@@ -1561,7 +2206,11 @@ const getProgressDashboard = useCallback(async () => {
   deleteSegmentation,
   startAnalysis,
   exportResults,
-  // New advanced analysis functions
+  // NEW AI Segmentation functions
+  createAISegmentation,
+  analyzeSegmentsWithAI,
+  prioritizeSegmentsWithAI,
+  // Advanced analysis functions
   analyzeStatisticalImprobability,
   analyzeEntityClustering,
   getSpoilageDistribution,
@@ -1705,6 +2354,7 @@ export function useAPI() {
     deleteSegmentation,
     startAnalysis,
     exportResults,
+    pollJobStatus
   } = useAppState();
   
   return {
@@ -1718,6 +2368,7 @@ export function useAPI() {
     deleteSegmentation,
     startAnalysis,
     exportResults,
+    pollJobStatus
   };
 }
 

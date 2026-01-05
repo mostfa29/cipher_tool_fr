@@ -3,7 +3,7 @@
 
 import React, { useState, useMemo, useCallback } from 'react';
 import { useAppState, ACTIONS } from '../context/AppContext';
-import { Info, ChevronDown } from 'lucide-react';
+import { Info, ChevronDown, ChevronUp } from 'lucide-react';
 
 // ============================================================================
 // CONSTANTS
@@ -136,7 +136,7 @@ const PRESETS = {
     description: 'Most effective methods, ~75% of findings'
   },
   allEnabled: {
-    label: 'Select All Validated',
+    label: 'All Validated',
     methods: CIPHER_METHODS.filter(m => m.enabled).map(m => m.id),
     description: 'All methods with proven success rates'
   },
@@ -146,7 +146,7 @@ const PRESETS = {
     description: 'Include experimental methods'
   },
   none: {
-    label: 'Clear',
+    label: 'Clear All',
     methods: [],
     description: 'Deselect all methods'
   }
@@ -163,6 +163,7 @@ const MethodSelector = ({
   const { state, dispatch } = useAppState();
   const selectedMethods = state.analyze.selectedMethods || [];
   const [expandedMethod, setExpandedMethod] = useState(null);
+  const [isCollapsed, setIsCollapsed] = useState(false);
 
   // Computed values
   const enabledMethods = useMemo(() => 
@@ -185,38 +186,63 @@ const MethodSelector = ({
   }, []);
 
   return (
-    <div className="space-y-4">
-      <Header selectedCount={selectedMethods.length} />
-      <PresetButtons onSelectPreset={handleSelectPreset} methodCount={CIPHER_METHODS.length} />
-      
-      {selectedMethods.length > 0 && <StatsPanel stats={stats} />}
-      
-      <MethodSection
-        title="Validated Methods"
-        methods={enabledMethods}
-        selectedMethods={selectedMethods}
-        expandedMethod={expandedMethod}
-        onToggle={handleToggle}
-        onExpand={handleExpand}
-        showSuccessRates={showSuccessRates}
-      />
+    <div className="bg-white rounded-2xl shadow-md border border-gray-200 overflow-hidden">
+      {/* Collapsible Header */}
+      <button
+        onClick={() => setIsCollapsed(!isCollapsed)}
+        className="w-full px-5 py-4 flex items-center justify-between hover:bg-gray-50 transition-colors"
+      >
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 bg-gradient-to-br from-purple-500 to-pink-500 rounded-xl flex items-center justify-center">
+            <span className="text-xl">🔤</span>
+          </div>
+          <div className="text-left">
+            <h3 className="text-lg font-bold text-gray-900">Cipher Methods</h3>
+            <p className="text-xs text-gray-600 mt-0.5">
+              {selectedMethods.length > 0 
+                ? `${selectedMethods.length} method${selectedMethods.length !== 1 ? 's' : ''} selected`
+                : 'Select Renaissance cipher techniques'
+              }
+            </p>
+          </div>
+        </div>
+        {isCollapsed ? <ChevronDown className="w-5 h-5 text-gray-400" /> : <ChevronUp className="w-5 h-5 text-gray-400" />}
+      </button>
 
-      {experimentalMethods.length > 0 && (
-        <MethodSection
-          title="Experimental Methods"
-          subtitle="Lower success rates"
-          methods={experimentalMethods}
-          selectedMethods={selectedMethods}
-          expandedMethod={expandedMethod}
-          onToggle={handleToggle}
-          onExpand={handleExpand}
-          showSuccessRates={showSuccessRates}
-          isExperimental
-        />
+      {!isCollapsed && (
+        <div className="px-5 pb-5 space-y-4">
+          <PresetButtons onSelectPreset={handleSelectPreset} methodCount={CIPHER_METHODS.length} />
+          
+          {selectedMethods.length > 0 && <StatsPanel stats={stats} />}
+          
+          <MethodSection
+            title="Validated Methods"
+            methods={enabledMethods}
+            selectedMethods={selectedMethods}
+            expandedMethod={expandedMethod}
+            onToggle={handleToggle}
+            onExpand={handleExpand}
+            showSuccessRates={showSuccessRates}
+          />
+
+          {experimentalMethods.length > 0 && (
+            <MethodSection
+              title="Experimental Methods"
+              subtitle="Lower success rates"
+              methods={experimentalMethods}
+              selectedMethods={selectedMethods}
+              expandedMethod={expandedMethod}
+              onToggle={handleToggle}
+              onExpand={handleExpand}
+              showSuccessRates={showSuccessRates}
+              isExperimental
+            />
+          )}
+
+          <HelpPanel />
+          {selectedMethods.length === 0 && <NoSelectionWarning />}
+        </div>
       )}
-
-      <HelpPanel />
-      {selectedMethods.length === 0 && <NoSelectionWarning />}
     </div>
   );
 };
@@ -232,13 +258,19 @@ function useComputeStats(selectedMethods, allMethods) {
       return sum + (method?.successRate || 0);
     }, 0);
 
+    const highCostMethods = selectedMethods.filter(id => {
+      const method = allMethods.find(m => m.id === id);
+      return method?.computationalCost === 'high';
+    }).length;
+
     return {
       selected: selectedMethods.length,
       total: allMethods.length,
       avgSuccessRate: selectedMethods.length > 0 
         ? (totalSuccessRate / selectedMethods.length).toFixed(2)
         : 0,
-      estimatedTime: (selectedMethods.length * 0.15).toFixed(1),
+      totalSuccessRate: totalSuccessRate.toFixed(2),
+      estimatedTime: (selectedMethods.length * 0.15 + highCostMethods * 0.5).toFixed(1),
     };
   }, [selectedMethods, allMethods]);
 }
@@ -258,6 +290,19 @@ function useHandleToggle(selectedMethods, allowMultiple, dispatch) {
     }
     
     dispatch({ type: ACTIONS.SET_SELECTED_METHODS, payload: newMethods });
+    
+    // Add notification for method selection
+    const method = CIPHER_METHODS.find(m => m.id === methodId);
+    if (method && !selectedMethods.includes(methodId)) {
+      dispatch({
+        type: ACTIONS.ADD_NOTIFICATION,
+        payload: {
+          type: 'info',
+          message: `${method.icon} ${method.name} selected`,
+          duration: 1500
+        }
+      });
+    }
   }, [selectedMethods, allowMultiple, dispatch]);
 }
 
@@ -269,6 +314,15 @@ function useSelectPreset(dispatch) {
         type: ACTIONS.SET_SELECTED_METHODS, 
         payload: preset.methods 
       });
+      
+      dispatch({
+        type: ACTIONS.ADD_NOTIFICATION,
+        payload: {
+          type: 'success',
+          message: `${preset.label} applied (${preset.methods.length} methods)`,
+          duration: 2000
+        }
+      });
     }
   }, [dispatch]);
 }
@@ -279,36 +333,20 @@ function useSelectPreset(dispatch) {
 
 function getCostColor(cost) {
   switch (cost) {
-    case 'low': return 'text-green-600 bg-green-50';
-    case 'medium': return 'text-yellow-600 bg-yellow-50';
-    case 'high': return 'text-red-600 bg-red-50';
-    default: return 'text-gray-600 bg-gray-50';
+    case 'low': return 'text-green-600 bg-green-50 border-green-200';
+    case 'medium': return 'text-yellow-600 bg-yellow-50 border-yellow-200';
+    case 'high': return 'text-red-600 bg-red-50 border-red-200';
+    default: return 'text-gray-600 bg-gray-50 border-gray-200';
   }
 }
 
 function formatCategory(category) {
-  return category.replace(/_/g, ' ');
+  return category.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
 }
 
 // ============================================================================
 // SUB-COMPONENTS
 // ============================================================================
-
-const Header = ({ selectedCount }) => (
-  <div className="flex items-center justify-between">
-    <div>
-      <h3 className="text-sm font-semibold text-gray-900">Cipher Methods</h3>
-      <p className="text-xs text-gray-600 mt-0.5">
-        Select which Renaissance cipher techniques to apply
-      </p>
-    </div>
-    {selectedCount > 0 && (
-      <span className="px-2 py-1 text-xs bg-blue-100 text-blue-700 rounded-full font-medium">
-        {selectedCount} selected
-      </span>
-    )}
-  </div>
-);
 
 const PresetButtons = ({ onSelectPreset, methodCount }) => (
   <div className="flex flex-wrap gap-2">
@@ -316,38 +354,60 @@ const PresetButtons = ({ onSelectPreset, methodCount }) => (
       <button
         key={key}
         onClick={() => onSelectPreset(key)}
-        className="px-3 py-1.5 text-xs font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+        className={`px-3 py-2 text-xs font-semibold rounded-lg transition-all border-2 ${
+          key === 'top4'
+            ? 'bg-gradient-to-r from-purple-50 to-pink-50 border-purple-300 text-purple-900 hover:from-purple-100 hover:to-pink-100'
+            : key === 'none'
+            ? 'bg-red-50 border-red-200 text-red-700 hover:bg-red-100'
+            : 'bg-white border-gray-300 text-gray-700 hover:bg-gray-50'
+        }`}
         title={preset.description}
       >
-        {preset.label}{key === 'all' ? ` (${methodCount})` : ''}
+        {preset.label}
+        {key === 'all' ? ` (${methodCount})` : 
+         key === 'allEnabled' ? ` (${CIPHER_METHODS.filter(m => m.enabled).length})` :
+         key === 'top4' ? ' (4)' : ''}
       </button>
     ))}
   </div>
 );
 
 const StatsPanel = ({ stats }) => (
-  <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
-    <div className="grid grid-cols-3 gap-3 text-xs">
+  <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border-2 border-blue-200 rounded-xl p-4">
+    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
       <StatItem 
         label="Selected" 
-        value={`${stats.selected}/${stats.total}`} 
+        value={`${stats.selected}/${stats.total}`}
+        icon="✓"
       />
       <StatItem 
         label="Avg Success" 
-        value={`${stats.avgSuccessRate}%`} 
+        value={`${stats.avgSuccessRate}%`}
+        icon="📊"
+      />
+      <StatItem 
+        label="Total Success" 
+        value={`${stats.totalSuccessRate}%`}
+        icon="🎯"
       />
       <StatItem 
         label="Est. Time" 
-        value={`+${stats.estimatedTime}s/segment`} 
+        value={`+${stats.estimatedTime}s`}
+        icon="⏱️"
+        sublabel="per segment"
       />
     </div>
   </div>
 );
 
-const StatItem = ({ label, value }) => (
-  <div>
-    <span className="text-blue-700">{label}:</span>
-    <span className="ml-2 font-semibold text-blue-900">{value}</span>
+const StatItem = ({ label, value, icon, sublabel }) => (
+  <div className="text-center">
+    <div className="text-sm text-blue-700 font-medium mb-1 flex items-center justify-center gap-1">
+      <span>{icon}</span>
+      <span>{label}</span>
+    </div>
+    <div className="text-2xl font-bold text-blue-900">{value}</div>
+    {sublabel && <div className="text-xs text-blue-600 mt-0.5">{sublabel}</div>}
   </div>
 );
 
@@ -362,15 +422,20 @@ const MethodSection = ({
   showSuccessRates,
   isExperimental = false
 }) => (
-  <div className="space-y-2">
+  <div className="space-y-3">
     <div className="flex items-center gap-2">
-      <h4 className="text-xs font-semibold text-gray-900">
-        {title} ({methods.length})
+      <h4 className="text-sm font-bold text-gray-900">
+        {title}
       </h4>
+      <span className={`px-2 py-1 text-xs font-bold rounded ${
+        isExperimental 
+          ? 'bg-amber-100 text-amber-700' 
+          : 'bg-green-100 text-green-700'
+      }`}>
+        {methods.length} {isExperimental ? 'experimental' : 'validated'}
+      </span>
       {subtitle && (
-        <span className="px-2 py-0.5 text-xs bg-amber-100 text-amber-700 rounded">
-          {subtitle}
-        </span>
+        <span className="text-xs text-gray-600">• {subtitle}</span>
       )}
     </div>
     <div className="space-y-2">
@@ -398,19 +463,19 @@ const MethodCard = ({
   showSuccessRates,
 }) => (
   <div
-    className={`border rounded-lg transition-all ${
+    className={`border-2 rounded-xl transition-all ${
       isSelected
-        ? 'border-blue-500 bg-blue-50 ring-2 ring-blue-200'
-        : 'border-gray-200 bg-white hover:border-gray-300'
+        ? 'border-blue-500 bg-blue-50 shadow-md'
+        : 'border-gray-200 bg-white hover:border-gray-300 hover:shadow-sm'
     }`}
   >
-    <div className="p-3">
+    <div className="p-4">
       <div className="flex items-start gap-3">
         <input
           type="checkbox"
           checked={isSelected}
           onChange={onToggle}
-          className="mt-1 w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+          className="mt-1 w-5 h-5 text-blue-600 border-gray-300 rounded focus:ring-blue-500 cursor-pointer"
         />
 
         <div className="flex-1 min-w-0">
@@ -433,15 +498,15 @@ const MethodCard = ({
 
 const MethodCardHeader = ({ method, onExpand, isExpanded }) => (
   <div className="flex items-start justify-between gap-2">
-    <div className="flex items-center gap-2">
-      <span className="text-lg" role="img" aria-label={method.name}>
+    <div className="flex items-center gap-2 flex-1">
+      <span className="text-2xl flex-shrink-0" role="img" aria-label={method.name}>
         {method.icon}
       </span>
-      <div>
-        <h5 className="text-sm font-medium text-gray-900">
+      <div className="flex-1 min-w-0">
+        <h5 className="text-sm font-bold text-gray-900">
           {method.name}
         </h5>
-        <p className="text-xs text-gray-600 mt-0.5">
+        <p className="text-xs text-gray-600 mt-1 line-clamp-2">
           {method.description}
         </p>
       </div>
@@ -449,48 +514,51 @@ const MethodCardHeader = ({ method, onExpand, isExpanded }) => (
 
     <button
       onClick={onExpand}
-      className="flex-shrink-0 p-1 text-gray-400 hover:text-gray-600 rounded transition-colors"
-      title="More info"
+      className="flex-shrink-0 p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
+      title={isExpanded ? "Hide details" : "Show details"}
       aria-label={isExpanded ? 'Hide details' : 'Show details'}
     >
-      <ChevronDown 
-        className={`w-4 h-4 transition-transform ${isExpanded ? 'rotate-180' : ''}`} 
-      />
+      {isExpanded ? (
+        <ChevronUp className="w-4 h-4" />
+      ) : (
+        <ChevronDown className="w-4 h-4" />
+      )}
     </button>
   </div>
 );
 
 const MethodCardMetadata = ({ method, showSuccessRates }) => (
-  <div className="flex items-center gap-3 mt-2 text-xs">
+  <div className="flex items-center gap-2 mt-3 text-xs flex-wrap">
     {showSuccessRates && (
-      <MetadataItem 
+      <MetadataBadge 
         label="Success" 
-        value={`${method.successRate}%`} 
+        value={`${method.successRate}%`}
+        color="bg-green-50 text-green-700 border-green-200"
       />
     )}
-    <MetadataItem 
+    <MetadataBadge 
       label="Type" 
-      value={formatCategory(method.category)} 
+      value={formatCategory(method.category)}
+      color="bg-blue-50 text-blue-700 border-blue-200"
     />
     <CostBadge cost={method.computationalCost} />
   </div>
 );
 
-const MetadataItem = ({ label, value }) => (
-  <div className="flex items-center gap-1">
-    <span className="text-gray-600">{label}:</span>
-    <span className="font-semibold text-gray-900">{value}</span>
-  </div>
+const MetadataBadge = ({ label, value, color }) => (
+  <span className={`px-2 py-1 rounded-lg border font-semibold ${color}`}>
+    {label}: {value}
+  </span>
 );
 
 const CostBadge = ({ cost }) => (
-  <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${getCostColor(cost)}`}>
-    {cost}
+  <span className={`px-2 py-1 rounded-lg border font-semibold capitalize ${getCostColor(cost)}`}>
+    {cost} cost
   </span>
 );
 
 const MethodCardDetails = ({ method }) => (
-  <div className="border-t border-gray-200 p-3 bg-gray-50 space-y-3">
+  <div className="border-t-2 border-gray-200 p-4 bg-gray-50 space-y-4">
     <DetailSection 
       title="Example" 
       content={method.example} 
@@ -510,11 +578,12 @@ const MethodCardDetails = ({ method }) => (
 
 const DetailSection = ({ title, content, isCode = false }) => (
   <div>
-    <h6 className="text-xs font-semibold text-gray-900 mb-1">
-      {title}:
+    <h6 className="text-xs font-bold text-gray-900 mb-2 flex items-center gap-1">
+      <span className="text-blue-600">▸</span>
+      {title}
     </h6>
     <p className={`text-xs text-gray-700 ${
-      isCode ? 'font-mono bg-white border border-gray-200 rounded px-2 py-1' : ''
+      isCode ? 'font-mono bg-white border border-gray-300 rounded-lg px-3 py-2' : ''
     }`}>
       {content}
     </p>
@@ -522,25 +591,29 @@ const DetailSection = ({ title, content, isCode = false }) => (
 );
 
 const ExperimentalWarning = () => (
-  <div className="bg-amber-50 border border-amber-200 rounded p-2">
-    <p className="text-xs text-amber-800">
-      ⚠️ <strong>Experimental:</strong> Lower success rate based on corpus analysis. 
-      May produce more false positives.
-    </p>
+  <div className="bg-amber-50 border-2 border-amber-300 rounded-xl p-3">
+    <div className="flex items-start gap-2">
+      <span className="text-lg flex-shrink-0">⚠️</span>
+      <p className="text-xs text-amber-900">
+        <strong className="font-bold">Experimental Method:</strong> Lower success rate based on corpus analysis. 
+        May produce more false positives. Use with caution or combine with validated methods.
+      </p>
+    </div>
   </div>
 );
 
 const HelpPanel = () => (
-  <div className="bg-gray-50 border border-gray-200 rounded-lg p-3">
-    <div className="flex gap-2">
-      <Info className="w-5 h-5 text-gray-600 flex-shrink-0 mt-0.5" />
-      <div className="text-xs text-gray-700">
-        <p className="font-medium mb-1">💡 Method Selection Tips:</p>
-        <ul className="space-y-1 list-disc list-inside text-gray-600">
-          <li><strong>Top 4</strong> methods account for 75% of findings</li>
-          <li>More methods = longer processing time but more comprehensive</li>
-          <li>Success rates based on Shakespeare corpus analysis</li>
-          <li>Click any method to see detailed information</li>
+  <div className="bg-gradient-to-br from-indigo-50 to-purple-50 border-2 border-indigo-200 rounded-xl p-4">
+    <div className="flex gap-3">
+      <Info className="w-5 h-5 text-indigo-600 flex-shrink-0 mt-0.5" />
+      <div className="text-xs text-indigo-900">
+        <p className="font-bold mb-2 text-sm">💡 Method Selection Tips</p>
+        <ul className="space-y-1.5 list-disc list-inside text-indigo-800">
+          <li><strong>Top 4 Preset:</strong> Accounts for ~75% of all findings</li>
+          <li><strong>Processing Time:</strong> More methods = longer analysis but more comprehensive</li>
+          <li><strong>Success Rates:</strong> Based on extensive Shakespeare corpus analysis</li>
+          <li><strong>Details:</strong> Click any method card to see examples and usage guidance</li>
+          <li><strong>Experimental:</strong> Lower success rates but may catch unique patterns</li>
         </ul>
       </div>
     </div>
@@ -548,25 +621,16 @@ const HelpPanel = () => (
 );
 
 const NoSelectionWarning = () => (
-  <div className="bg-amber-50 border border-amber-200 rounded-lg p-3">
-    <div className="flex gap-2">
-      <svg
-        className="w-5 h-5 text-amber-600 flex-shrink-0"
-        fill="none"
-        stroke="currentColor"
-        viewBox="0 0 24 24"
-      >
-        <path
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          strokeWidth={2}
-          d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"
-        />
-      </svg>
-      <div className="text-sm text-amber-800">
-        <p className="font-medium">No methods selected</p>
-        <p className="text-xs mt-1">
-          Select at least one cipher method to begin analysis
+  <div className="bg-amber-50 border-2 border-amber-300 rounded-xl p-4">
+    <div className="flex gap-3">
+      <div className="flex-shrink-0 w-10 h-10 bg-amber-200 rounded-full flex items-center justify-center">
+        <span className="text-xl">⚠️</span>
+      </div>
+      <div className="flex-1">
+        <p className="font-bold text-amber-900 mb-1">No Methods Selected</p>
+        <p className="text-sm text-amber-800">
+          Select at least one cipher method to begin analysis. We recommend starting with the 
+          <strong> Top 4 Preset</strong> for optimal results.
         </p>
       </div>
     </div>

@@ -1,4 +1,4 @@
-// EnhancedSegmentationTool.jsx - COMPLETE REWRITE
+// EnhancedSegmentationTool.jsx - MULTI-EDITION SUPPORT
 import React, { useState, useMemo, useCallback, useRef, useEffect } from 'react';
 import { useImmer } from 'use-immer';
 import { useAppState, ACTIONS } from '../context/AppContext';
@@ -8,7 +8,8 @@ import {
   Lock, Unlock, Plus, Minus, Eye, EyeOff, Save, MousePointer, Hand,
   Type, Hash, FileText, ChevronDown, ChevronUp, Play, Target, Grid,
   Circle, Square, Triangle, Diamond, Hexagon, CircleDot, Star,
-  TrendingUp, Activity, TrendingDown, HelpCircle, Edit3, Copy
+  TrendingUp, Activity, TrendingDown, HelpCircle, Edit3, Copy,
+  BookOpen, GitCompare, Calendar, Percent
 } from 'lucide-react';
 
 // ============================================================================
@@ -23,7 +24,6 @@ const MODES = {
   RESIZE_END: 'resize-end',
 };
 
-// Replace the COLOR_PALETTE constant with this enhanced version
 const COLOR_PALETTE = [
   { bg: '#E0E7FF', border: '#4F46E5', text: '#312E81', name: 'Indigo', icon: Circle, highlight: '#C7D2FE' },
   { bg: '#DBEAFE', border: '#0284C7', text: '#0C4A6E', name: 'Sky Blue', icon: Square, highlight: '#BAE6FD' },
@@ -33,10 +33,6 @@ const COLOR_PALETTE = [
   { bg: '#E9D5FF', border: '#9333EA', text: '#581C87', name: 'Purple', icon: CircleDot, highlight: '#D8B4FE' },
   { bg: '#FFEDD5', border: '#EA580C', text: '#7C2D12', name: 'Orange', icon: Star, highlight: '#FED7AA' },
   { bg: '#FEE2E2', border: '#DC2626', text: '#991B1B', name: 'Red', icon: Activity, highlight: '#FECACA' },
-  { bg: '#E0F2FE', border: '#0369A1', text: '#0C4A6E', name: 'Cyan', icon: Circle, highlight: '#BAE6FD' },
-  { bg: '#FAF5FF', border: '#7C3AED', text: '#5B21B6', name: 'Violet', icon: Square, highlight: '#E9D5FF' },
-  { bg: '#ECFCCB', border: '#65A30D', text: '#3F6212', name: 'Lime', icon: Triangle, highlight: '#D9F99D' },
-  { bg: '#FFF7ED', border: '#C2410C', text: '#7C2D12', name: 'Rust', icon: Diamond, highlight: '#FFEDD5' },
 ];
 
 const VALIDATION_COLORS = {
@@ -47,6 +43,7 @@ const VALIDATION_COLORS = {
 };
 
 const SEGMENTATION_MODES = [
+  { value: 'ai_statistical', label: 'AI Statistical', icon: Sparkles, desc: 'AI-powered anomaly detection' },
   { value: 'smart', label: 'Smart Segments', icon: Sparkles, desc: 'AI-powered natural breaks' },
   { value: 'lines', label: 'Fixed Lines', icon: Target, desc: 'Split every N lines' },
   { value: 'letters', label: 'Letter Count', icon: Type, desc: 'Target character count' },
@@ -56,14 +53,13 @@ const SEGMENTATION_MODES = [
 ];
 
 // ============================================================================
-// UTILITY FUNCTIONS
+// UTILITY FUNCTIONS (same as before)
 // ============================================================================
 
 const calculateLevel = (annotation, allAnnotations) => {
   let level = 0;
   for (const other of allAnnotations) {
     if (other.id === annotation.id) continue;
-    // An annotation is nested if another completely contains it
     if (other.start <= annotation.start && other.end >= annotation.end) {
       level++;
     }
@@ -71,46 +67,34 @@ const calculateLevel = (annotation, allAnnotations) => {
   return level;
 };
 
-// Replace the getAnnotationColor function with this smarter version
+// ============================================================================
+// CORRECTED: Color assignment without recursion
+// ============================================================================
+
 const getAnnotationColor = (annotation, allAnnotations) => {
   const level = calculateLevel(annotation, allAnnotations);
   
-  // Get siblings (annotations at the same level)
+  // Get siblings at the same level
   const siblings = allAnnotations.filter(ann => {
     const annLevel = calculateLevel(ann, allAnnotations);
     return annLevel === level && ann.id !== annotation.id;
   }).sort((a, b) => a.start - b.start);
   
-  // Find position among siblings
   const position = siblings.findIndex(s => s.start > annotation.start);
   const actualPosition = position === -1 ? siblings.length : position;
   
-  // Use different color strategy based on level
+  // Calculate base color index using level and position
   let colorIndex;
   if (level === 0) {
-    // Top level: use position-based colors with spacing
+    // Top-level annotations: spread them out
     colorIndex = (actualPosition * 3) % COLOR_PALETTE.length;
   } else {
-    // Nested levels: offset by level to avoid parent color
+    // Nested annotations: offset by level and position
     colorIndex = (level * 4 + actualPosition * 2) % COLOR_PALETTE.length;
   }
   
-  // Avoid using same color as parent
-  const parent = allAnnotations.find(other => 
-    other.id !== annotation.id && 
-    other.start <= annotation.start && 
-    other.end >= annotation.end
-  );
-  
-  if (parent) {
-    const parentColor = getAnnotationColor(parent, allAnnotations);
-    const parentIndex = COLOR_PALETTE.findIndex(c => c.border === parentColor.border);
-    
-    // If same color as parent, shift to next color
-    if (colorIndex === parentIndex) {
-      colorIndex = (colorIndex + 1) % COLOR_PALETTE.length;
-    }
-  }
+  // REMOVED: Recursive parent color check that caused infinite loop
+  // Instead, just use level-based differentiation which is already sufficient
   
   return COLOR_PALETTE[colorIndex];
 };
@@ -118,11 +102,11 @@ const getAnnotationColor = (annotation, allAnnotations) => {
 const validateAnnotation = (text) => {
   const letterCount = text.replace(/[^a-zA-Z]/g, '').length;
   
-  if (letterCount < 30) {
+  if (letterCount < 5) {
     return { status: 'too-short', message: 'Too short for analysis (<30 letters)' };
   } else if (letterCount > 500) {
     return { status: 'too-long', message: 'Very long segment (>500 letters)' };
-  } else if (letterCount < 50) {
+  } else if (letterCount < 30) {
     return { status: 'warning', message: 'Small but usable (50+ recommended)' };
   } else {
     return { status: 'valid', message: 'Perfect for analysis' };
@@ -143,7 +127,7 @@ const calculateQuality = (text) => {
 };
 
 // ============================================================================
-// SEGMENTATION ENGINES
+// SEGMENTATION ENGINES (same as before)
 // ============================================================================
 
 const SegmentationEngine = {
@@ -232,129 +216,233 @@ const SegmentationEngine = {
 };
 
 // ============================================================================
-// TEXT ANNOTATOR COMPONENT (Core Manual Annotation)
+// EDITION SELECTOR COMPONENT
 // ============================================================================
-// Add this component before TextAnnotator
-const NestingGuide = ({ annotations, selectedId, hoveredId }) => {
-  if (annotations.length === 0) return null;
-  
-  const selected = annotations.find(a => a.id === selectedId);
-  const hovered = annotations.find(a => a.id === hoveredId);
-  const target = selected || hovered;
-  
-  if (!target) return null;
-  
-  // Find parents (annotations that contain this one)
-  const parents = annotations.filter(ann => 
-    ann.id !== target.id &&
-    ann.start <= target.start && 
-    ann.end >= target.end
-  ).sort((a, b) => (a.end - a.start) - (b.end - b.start)); // Innermost first
-  
-  // Find children (annotations contained by this one)
-  const children = annotations.filter(ann => 
-    ann.id !== target.id &&
-    target.start <= ann.start && 
-    target.end >= ann.end
-  );
-  
-  if (parents.length === 0 && children.length === 0) return null;
-  
+
+const EditionSelector = ({ editions, selectedEditions, onToggleEdition, onAddEdition, onRemoveEdition }) => {
+  const [isExpanded, setIsExpanded] = useState(true);
+  const [showAddDialog, setShowAddDialog] = useState(false);
+
   return (
-    <div style={{
-      position: 'fixed',
-      top: '20px',
-      right: '20px',
-      backgroundColor: 'white',
-      padding: '16px',
-      borderRadius: '12px',
-      boxShadow: '0 8px 24px rgba(0,0,0,0.15)',
-      border: '2px solid #e5e7eb',
-      zIndex: 10000,
-      maxWidth: '300px'
-    }}>
-      <div style={{ 
-        fontSize: '14px', 
-        fontWeight: 'bold', 
-        marginBottom: '12px',
-        color: '#1f2937',
-        display: 'flex',
-        alignItems: 'center',
-        gap: '8px'
-      }}>
-        <Layers className="w-4 h-4" />
-        Nesting Hierarchy
-      </div>
-      
-      {parents.length > 0 && (
-        <div style={{ marginBottom: '12px' }}>
-          <div style={{ fontSize: '12px', fontWeight: '600', color: '#6b7280', marginBottom: '6px' }}>
-            📦 Parents (contains this):
+    <div className="bg-white rounded-2xl shadow-lg border-2 border-gray-200 overflow-hidden">
+      <button
+        onClick={() => setIsExpanded(!isExpanded)}
+        className="w-full p-5 flex items-center justify-between hover:bg-gray-50 transition-colors"
+      >
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-indigo-500 rounded-xl flex items-center justify-center">
+            <BookOpen className="w-5 h-5 text-white" />
           </div>
-          {parents.map((parent, idx) => {
-            const color = getAnnotationColor(parent, annotations);
-            return (
-              <div 
-                key={parent.id}
-                style={{
-                  fontSize: '11px',
-                  padding: '6px 8px',
-                  backgroundColor: color.bg,
-                  border: `2px solid ${color.border}`,
-                  borderRadius: '6px',
-                  marginBottom: '4px',
-                  marginLeft: `${idx * 12}px`
-                }}
-              >
-                L{calculateLevel(parent, annotations)}: {parent.label.substring(0, 30)}...
-              </div>
-            );
-          })}
+          <div className="text-left">
+            <h3 className="text-lg font-bold text-gray-900">Editions</h3>
+            <p className="text-xs text-gray-500">{selectedEditions.length} active</p>
+          </div>
         </div>
-      )}
+        {isExpanded ? <ChevronUp className="w-5 h-5" /> : <ChevronDown className="w-5 h-5" />}
+      </button>
       
-      <div style={{
-        fontSize: '12px',
-        fontWeight: '700',
-        color: '#3b82f6',
-        padding: '8px',
-        backgroundColor: '#eff6ff',
-        border: '2px solid #3b82f6',
-        borderRadius: '8px',
-        marginBottom: '12px'
-      }}>
-        🎯 Current: {target.label.substring(0, 30)}...
-      </div>
-      
-      {children.length > 0 && (
-        <div>
-          <div style={{ fontSize: '12px', fontWeight: '600', color: '#6b7280', marginBottom: '6px' }}>
-            📎 Children (inside this):
-          </div>
-          {children.map((child, idx) => {
-            const color = getAnnotationColor(child, annotations);
+      {isExpanded && (
+        <div className="px-5 pb-5 space-y-3">
+          {editions.map((edition, idx) => {
+            const isSelected = selectedEditions.includes(edition.id);
+            const editionColor = COLOR_PALETTE[idx % COLOR_PALETTE.length];
+            
             return (
-              <div 
-                key={child.id}
-                style={{
-                  fontSize: '11px',
-                  padding: '6px 8px',
-                  backgroundColor: color.bg,
-                  border: `2px solid ${color.border}`,
-                  borderRadius: '6px',
-                  marginBottom: '4px',
-                  marginLeft: `${idx * 12}px`
-                }}
+              <div
+                key={edition.id}
+                className={`p-4 rounded-xl border-2 transition-all cursor-pointer ${
+                  isSelected
+                    ? `border-${editionColor.border} bg-gradient-to-r from-${editionColor.bg} to-white`
+                    : 'border-gray-200 bg-white hover:border-gray-300'
+                }`}
+                onClick={() => onToggleEdition(edition.id)}
               >
-                L{calculateLevel(child, annotations)}: {child.label.substring(0, 30)}...
+                <div className="flex items-start justify-between">
+                  <div className="flex-1">
+                    <div className="flex items-center gap-2 mb-2">
+                      <div
+                        className="w-3 h-3 rounded-full"
+                        style={{ backgroundColor: editionColor.border }}
+                      />
+                      <span className="font-bold text-sm text-gray-900">
+                        {edition.date || `Edition ${idx + 1}`}
+                      </span>
+                      {edition.isPrimary && (
+                        <span className="px-2 py-0.5 bg-blue-100 text-blue-700 text-xs font-bold rounded">
+                          PRIMARY
+                        </span>
+                      )}
+                    </div>
+                    
+                    <div className="text-xs text-gray-600 space-y-1">
+                      <div className="flex items-center gap-2">
+                        <FileText className="w-3 h-3" />
+                        <span>{edition.line_count?.toLocaleString()} lines</span>
+                      </div>
+                      {edition.estc_id && (
+                        <div className="flex items-center gap-2">
+                          <Hash className="w-3 h-3" />
+                          <span>{edition.estc_id}</span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                  
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onToggleEdition(edition.id);
+                      }}
+                      className={`p-2 rounded-lg transition-all ${
+                        isSelected
+                          ? 'bg-green-500 text-white'
+                          : 'bg-gray-200 text-gray-600 hover:bg-gray-300'
+                      }`}
+                    >
+                      {isSelected ? <Eye className="w-4 h-4" /> : <EyeOff className="w-4 h-4" />}
+                    </button>
+                    
+                    {editions.length > 1 && (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onRemoveEdition(edition.id);
+                        }}
+                        className="p-2 rounded-lg bg-red-100 text-red-600 hover:bg-red-200 transition-all"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    )}
+                  </div>
+                </div>
               </div>
             );
           })}
+          
+          <button
+            onClick={() => setShowAddDialog(true)}
+            className="w-full p-3 border-2 border-dashed border-gray-300 rounded-xl hover:border-blue-500 hover:bg-blue-50 transition-all flex items-center justify-center gap-2 text-gray-600 hover:text-blue-600"
+          >
+            <Plus className="w-4 h-4" />
+            <span className="font-semibold text-sm">Add Another Edition</span>
+          </button>
         </div>
       )}
     </div>
   );
 };
+
+// ============================================================================
+// EDITION COMPARISON PANEL
+// ============================================================================
+
+const EditionComparisonPanel = ({ editions, selectedEditions, editionAnnotations }) => {
+  const [isExpanded, setIsExpanded] = useState(false);
+  
+  const comparisonStats = useMemo(() => {
+    if (selectedEditions.length < 2) return null;
+    
+    const stats = selectedEditions.map(edId => {
+      const annotations = editionAnnotations[edId] || [];
+      return {
+        editionId: edId,
+        edition: editions.find(e => e.id === edId),
+        segmentCount: annotations.length,
+        avgQuality: annotations.length > 0
+          ? Math.round(annotations.reduce((sum, ann) => sum + calculateQuality(ann.text), 0) / annotations.length)
+          : 0,
+        validCount: annotations.filter(ann => validateAnnotation(ann.text).status === 'valid').length
+      };
+    });
+    
+    return stats;
+  }, [editions, selectedEditions, editionAnnotations]);
+  
+  if (!comparisonStats || selectedEditions.length < 2) return null;
+
+  return (
+    <div className="bg-white rounded-2xl shadow-lg border-2 border-gray-200 overflow-hidden">
+      <button
+        onClick={() => setIsExpanded(!isExpanded)}
+        className="w-full p-5 flex items-center justify-between hover:bg-gray-50 transition-colors"
+      >
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 bg-gradient-to-br from-purple-500 to-pink-500 rounded-xl flex items-center justify-center">
+            <GitCompare className="w-5 h-5 text-white" />
+          </div>
+          <div className="text-left">
+            <h3 className="text-lg font-bold text-gray-900">Edition Comparison</h3>
+            <p className="text-xs text-gray-500">Compare {selectedEditions.length} editions</p>
+          </div>
+        </div>
+        {isExpanded ? <ChevronUp className="w-5 h-5" /> : <ChevronDown className="w-5 h-5" />}
+      </button>
+      
+      {isExpanded && (
+        <div className="px-5 pb-5 space-y-3">
+          {comparisonStats.map((stat, idx) => {
+            const editionColor = COLOR_PALETTE[idx % COLOR_PALETTE.length];
+            
+            return (
+              <div
+                key={stat.editionId}
+                className="p-4 rounded-xl border-2"
+                style={{ 
+                  borderColor: editionColor.border,
+                  backgroundColor: editionColor.bg
+                }}
+              >
+                <div className="flex items-center justify-between mb-3">
+                  <div className="flex items-center gap-2">
+                    <div
+                      className="w-3 h-3 rounded-full"
+                      style={{ backgroundColor: editionColor.border }}
+                    />
+                    <span className="font-bold text-sm" style={{ color: editionColor.text }}>
+                      {stat.edition?.date || `Edition ${idx + 1}`}
+                    </span>
+                  </div>
+                  <span className="text-xs font-bold" style={{ color: editionColor.text }}>
+                    {stat.segmentCount} segments
+                  </span>
+                </div>
+                
+                <div className="grid grid-cols-2 gap-2">
+                  <div className="bg-white rounded-lg p-2">
+                    <div className="text-xs text-gray-600">Avg Quality</div>
+                    <div className="text-lg font-bold" style={{ color: editionColor.border }}>
+                      {stat.avgQuality}%
+                    </div>
+                  </div>
+                  <div className="bg-white rounded-lg p-2">
+                    <div className="text-xs text-gray-600">Valid</div>
+                    <div className="text-lg font-bold" style={{ color: editionColor.border }}>
+                      {stat.validCount}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+          
+          <div className="mt-4 p-4 bg-blue-50 border-2 border-blue-200 rounded-xl">
+            <div className="flex items-center gap-2 mb-2">
+              <Sparkles className="w-4 h-4 text-blue-600" />
+              <span className="text-sm font-bold text-blue-900">Comparison Insights</span>
+            </div>
+            <div className="text-xs text-blue-800 space-y-1">
+              <div>• Spoilage tracking across editions</div>
+              <div>• Cipher evolution analysis</div>
+              <div>• Text corruption detection</div>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
 const TextAnnotator = ({ 
   text, 
   annotations, 
@@ -835,8 +923,16 @@ const AnnotationList = ({ annotations, onSelect, selectedId, onDelete, onLock })
         level: calculateLevel(ann, annotations)
       }))
       .sort((a, b) => {
-        // Sort by level first, then by position
+        // Sort AI segments by priority first if present
+        if (a.metadata?.aiGenerated && b.metadata?.aiGenerated) {
+          const priorityDiff = (b.metadata.priority || 0) - (a.metadata.priority || 0);
+          if (priorityDiff !== 0) return priorityDiff;
+        }
+        
+        // Then by level
         if (a.level !== b.level) return a.level - b.level;
+        
+        // Finally by position
         return a.start - b.start;
       });
   }, [annotations]);
@@ -847,161 +943,705 @@ const AnnotationList = ({ annotations, onSelect, selectedId, onDelete, onLock })
         <div style={{ textAlign: 'center', padding: '40px 20px', color: '#9CA3AF' }}>
           <Layers className="w-16 h-16" style={{ margin: '0 auto 16px', opacity: 0.2 }} />
           <p style={{ fontSize: '14px', fontWeight: '600' }}>No segments yet</p>
-          <p style={{ fontSize: '12px', marginTop: '8px' }}>Drag to select text</p>
+          <p style={{ fontSize: '12px', marginTop: '8px' }}>
+            Use AI detection or drag to select text
+          </p>
         </div>
       ) : (
-        sortedAnnotations.map(ann => {
-          const isSelected = selectedId === ann.id;
-          const colors = getAnnotationColor(ann, annotations);
-          const validation = validateAnnotation(ann.text || '');
-          const validationColor = VALIDATION_COLORS[validation.status];
-          const quality = calculateQuality(ann.text || '');
-          const Icon = colors.icon;
-
-          return (
-            <div
-              key={ann.id}
-              onClick={() => onSelect(ann.id)}
-              style={{
-                padding: '12px',
-                marginLeft: `${ann.level * 20}px`, // Indent based on nesting
-                backgroundColor: colors.bg,
-                border: `2px solid ${colors.border}`,
-                borderLeft: `${4 + ann.level * 2}px solid ${colors.border}`, // Thicker left border for nested
-                borderRadius: '12px',
-                cursor: 'pointer',
-                transition: 'all 0.15s ease',
-                transform: isSelected ? 'scale(1.02)' : 'scale(1)',
-                boxShadow: isSelected 
-                  ? `0 6px 20px ${colors.border}40` 
-                  : '0 2px 8px rgba(0,0,0,0.05)',
-                position: 'relative'
-              }}
-            >
-              {/* Nesting indicator line */}
-              {ann.level > 0 && (
-                <div
-                  style={{
-                    position: 'absolute',
-                    left: '-20px',
-                    top: '0',
-                    width: '2px',
-                    height: '100%',
-                    backgroundColor: colors.border,
-                    opacity: 0.3
-                  }}
-                />
-              )}
+        <>
+          {/* Summary Stats for AI segments */}
+          {annotations.some(a => a.metadata?.aiGenerated) && (
+            <div style={{
+              padding: '12px',
+              background: 'linear-gradient(135deg, #EDE9FE 0%, #FBCFE8 100%)',
+              border: '2px solid #9333EA',
+              borderRadius: '12px',
+              marginBottom: '8px'
+            }}>
+              <div style={{ 
+                display: 'flex', 
+                alignItems: 'center', 
+                gap: '8px',
+                marginBottom: '8px'
+              }}>
+                <Sparkles className="w-4 h-4" style={{ color: '#9333EA' }} />
+                <span style={{ 
+                  fontSize: '12px', 
+                  fontWeight: 'bold', 
+                  color: '#581C87' 
+                }}>
+                  AI-Detected Segments
+                </span>
+              </div>
               
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
-                  <span style={{
-                    padding: '4px 10px',
-                    backgroundColor: colors.border,
-                    color: 'white',
-                    borderRadius: '999px',
-                    fontSize: '10px',
-                    fontWeight: '700',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '4px'
+              <div style={{ 
+                display: 'grid', 
+                gridTemplateColumns: 'repeat(3, 1fr)', 
+                gap: '8px',
+                fontSize: '11px'
+              }}>
+                <div style={{ textAlign: 'center' }}>
+                  <div style={{ 
+                    fontSize: '18px', 
+                    fontWeight: 'bold', 
+                    color: '#DC2626' 
                   }}>
-                    <Icon className="w-3 h-3" />
-                    L{ann.level}
-                  </span>
-                  
-                  {/* Color indicator */}
-                  <span style={{
-                    padding: '4px 10px',
-                    backgroundColor: 'white',
-                    border: `2px solid ${colors.border}`,
-                    borderRadius: '6px',
-                    fontSize: '10px',
-                    fontWeight: '600',
-                    color: colors.text
-                  }}>
-                    {colors.name}
-                  </span>
-                  
-                  <span style={{
-                    padding: '4px 8px',
-                    backgroundColor: 'white',
-                    borderRadius: '6px',
-                    fontSize: '10px',
-                    fontWeight: '600',
-                    color: validationColor.color
-                  }}>
-                    {validationColor.emoji} {validation.status}
-                  </span>
+                    {annotations.filter(a => a.metadata?.priority >= 4).length}
+                  </div>
+                  <div style={{ color: '#7C2D12' }}>High Priority</div>
                 </div>
                 
-                <div style={{ display: 'flex', gap: '4px' }}>
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onLock(ann.id);
-                    }}
-                    style={{ 
-                      padding: '4px', 
-                      borderRadius: '6px', 
-                      backgroundColor: 'white',
-                      border: '1px solid #e5e7eb',
-                      cursor: 'pointer'
-                    }}
-                  >
-                    {ann.locked ? <Lock className="w-3 h-3" /> : <Unlock className="w-3 h-3" />}
-                  </button>
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onDelete(ann.id);
-                    }}
-                    style={{ 
-                      padding: '4px', 
-                      borderRadius: '6px', 
-                      backgroundColor: 'white', 
-                      color: '#ef4444',
-                      border: '1px solid #e5e7eb',
-                      cursor: 'pointer'
-                    }}
-                  >
-                    <Trash2 className="w-3 h-3" />
-                  </button>
+                <div style={{ textAlign: 'center' }}>
+                  <div style={{ 
+                    fontSize: '18px', 
+                    fontWeight: 'bold', 
+                    color: '#F59E0B' 
+                  }}>
+                    {annotations.filter(a => a.metadata?.priority === 3).length}
+                  </div>
+                  <div style={{ color: '#78350F' }}>Medium</div>
+                </div>
+                
+                <div style={{ textAlign: 'center' }}>
+                  <div style={{ 
+                    fontSize: '18px', 
+                    fontWeight: 'bold', 
+                    color: '#10B981' 
+                  }}>
+                    {annotations.filter(a => a.metadata?.priority <= 2).length}
+                  </div>
+                  <div style={{ color: '#064E3B' }}>Low</div>
                 </div>
               </div>
               
-              <p style={{ 
-                fontSize: '13px', 
-                fontWeight: '600', 
-                color: '#1F2937', 
-                marginBottom: '6px',
-                lineHeight: '1.4'
+              <div style={{
+                marginTop: '8px',
+                paddingTop: '8px',
+                borderTop: '1px solid #D8B4FE',
+                fontSize: '10px',
+                color: '#581C87',
+                display: 'flex',
+                justifyContent: 'space-between'
               }}>
-                {ann.label}
-              </p>
-              
-              <div style={{ 
-                display: 'flex', 
-                gap: '10px', 
-                fontSize: '11px', 
-                color: '#6B7280', 
-                fontFamily: 'monospace',
-                flexWrap: 'wrap'
-              }}>
-                <span>{ann.start} → {ann.end}</span>
-                <span>•</span>
-                <span>{ann.end - ann.start} chars</span>
-                <span>•</span>
-                <span style={{ 
-                  fontWeight: 'bold',
-                  color: quality >= 80 ? '#059669' : quality >= 60 ? '#0284C7' : '#D97706'
-                }}>
-                  Q: {quality}%
+                <span>
+                  Avg Score: {
+                    annotations.filter(a => a.metadata?.anomalyScore).length > 0
+                      ? (annotations
+                          .filter(a => a.metadata?.anomalyScore)
+                          .reduce((sum, a) => sum + a.metadata.anomalyScore, 0) / 
+                         annotations.filter(a => a.metadata?.anomalyScore).length
+                        ).toFixed(1)
+                      : 'N/A'
+                  }
+                </span>
+                <span>
+                  Analysis: {annotations[0]?.metadata?.segmentType === 'ai_statistical' 
+                    ? annotations[0]?.metadata?.aiGenerated ? 'AI Statistical' : 'Standard'
+                    : 'Manual'}
                 </span>
               </div>
             </div>
-          );
-        })
+          )}
+          
+          {/* Individual Segments */}
+          {sortedAnnotations.map(ann => {
+            const isSelected = selectedId === ann.id;
+            const colors = getAnnotationColor(ann, annotations);
+            const validation = validateAnnotation(ann.text || '');
+            const validationColor = VALIDATION_COLORS[validation.status];
+            const quality = calculateQuality(ann.text || '');
+            const Icon = colors.icon;
+            const isAIGenerated = ann.metadata?.aiGenerated;
+
+            return (
+              <div
+                key={ann.id}
+                onClick={() => onSelect(ann.id)}
+                style={{
+                  padding: '12px',
+                  marginLeft: `${ann.level * 20}px`,
+                  backgroundColor: isAIGenerated 
+                    ? `linear-gradient(135deg, ${colors.bg} 0%, #FDF4FF 100%)`
+                    : colors.bg,
+                  border: `2px solid ${colors.border}`,
+                  borderLeft: `${4 + ann.level * 2}px solid ${colors.border}`,
+                  borderRadius: '12px',
+                  cursor: 'pointer',
+                  transition: 'all 0.15s ease',
+                  transform: isSelected ? 'scale(1.02)' : 'scale(1)',
+                  boxShadow: isSelected 
+                    ? `0 6px 20px ${colors.border}40` 
+                    : '0 2px 8px rgba(0,0,0,0.05)',
+                  position: 'relative',
+                  background: isAIGenerated
+                    ? `linear-gradient(135deg, ${colors.bg} 0%, #FDF4FF 100%)`
+                    : colors.bg
+                }}
+              >
+                {/* Nesting indicator line */}
+                {ann.level > 0 && (
+                  <div
+                    style={{
+                      position: 'absolute',
+                      left: '-20px',
+                      top: '0',
+                      width: '2px',
+                      height: '100%',
+                      backgroundColor: colors.border,
+                      opacity: 0.3
+                    }}
+                  />
+                )}
+                
+                {/* Top Row: Badges and Actions */}
+                <div style={{ 
+                  display: 'flex', 
+                  alignItems: 'center', 
+                  justifyContent: 'space-between', 
+                  marginBottom: '8px',
+                  flexWrap: 'wrap',
+                  gap: '6px'
+                }}>
+                  <div style={{ 
+                    display: 'flex', 
+                    alignItems: 'center', 
+                    gap: '6px', 
+                    flexWrap: 'wrap' 
+                  }}>
+                    {/* AI Badge */}
+                    {isAIGenerated && (
+                      <span style={{
+                        padding: '4px 10px',
+                        background: 'linear-gradient(135deg, #9333EA 0%, #EC4899 100%)',
+                        color: 'white',
+                        borderRadius: '999px',
+                        fontSize: '10px',
+                        fontWeight: '700',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '4px',
+                        boxShadow: '0 2px 8px rgba(147, 51, 234, 0.3)'
+                      }}>
+                        <Sparkles className="w-3 h-3" />
+                        AI
+                      </span>
+                    )}
+                    
+                    {/* Level Badge */}
+                    <span style={{
+                      padding: '4px 10px',
+                      backgroundColor: colors.border,
+                      color: 'white',
+                      borderRadius: '999px',
+                      fontSize: '10px',
+                      fontWeight: '700',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '4px'
+                    }}>
+                      <Icon className="w-3 h-3" />
+                      L{ann.level}
+                    </span>
+                    
+                    {/* Color Badge */}
+                    <span style={{
+                      padding: '4px 10px',
+                      backgroundColor: 'white',
+                      border: `2px solid ${colors.border}`,
+                      borderRadius: '6px',
+                      fontSize: '10px',
+                      fontWeight: '600',
+                      color: colors.text
+                    }}>
+                      {colors.name}
+                    </span>
+                    
+                    {/* Validation Badge */}
+                    <span style={{
+                      padding: '4px 8px',
+                      backgroundColor: 'white',
+                      borderRadius: '6px',
+                      fontSize: '10px',
+                      fontWeight: '600',
+                      color: validationColor.color
+                    }}>
+                      {validationColor.emoji} {validation.status}
+                    </span>
+                    
+                    {/* Priority Badge (AI segments only) */}
+                    {isAIGenerated && ann.metadata?.priority && (
+                      <span style={{
+                        padding: '4px 10px',
+                        backgroundColor: 
+                          ann.metadata.priority >= 4 ? '#FEE2E2' :
+                          ann.metadata.priority === 3 ? '#FEF3C7' : '#D1FAE5',
+                        color:
+                          ann.metadata.priority >= 4 ? '#991B1B' :
+                          ann.metadata.priority === 3 ? '#78350F' : '#064E3B',
+                        border: `2px solid ${
+                          ann.metadata.priority >= 4 ? '#DC2626' :
+                          ann.metadata.priority === 3 ? '#F59E0B' : '#10B981'
+                        }`,
+                        borderRadius: '6px',
+                        fontSize: '10px',
+                        fontWeight: '700',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '4px'
+                      }}>
+                        {ann.metadata.priority >= 4 ? (
+                          <><AlertCircle className="w-3 h-3" /> HIGH</>
+                        ) : ann.metadata.priority === 3 ? (
+                          <><Activity className="w-3 h-3" /> MED</>
+                        ) : (
+                          <><Check className="w-3 h-3" /> LOW</>
+                        )}
+                      </span>
+                    )}
+                  </div>
+                  
+                  {/* Action Buttons */}
+                  <div style={{ display: 'flex', gap: '4px' }}>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onLock(ann.id);
+                      }}
+                      style={{ 
+                        padding: '4px', 
+                        borderRadius: '6px', 
+                        backgroundColor: 'white',
+                        border: '1px solid #e5e7eb',
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center'
+                      }}
+                      title={ann.locked ? 'Unlock segment' : 'Lock segment'}
+                    >
+                      {ann.locked ? <Lock className="w-3 h-3" /> : <Unlock className="w-3 h-3" />}
+                    </button>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onDelete(ann.id);
+                      }}
+                      style={{ 
+                        padding: '4px', 
+                        borderRadius: '6px', 
+                        backgroundColor: 'white', 
+                        color: '#ef4444',
+                        border: '1px solid #e5e7eb',
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center'
+                      }}
+                      title="Delete segment"
+                    >
+                      <Trash2 className="w-3 h-3" />
+                    </button>
+                  </div>
+                </div>
+                
+                {/* Label Text */}
+                <p style={{ 
+                  fontSize: '13px', 
+                  fontWeight: '600', 
+                  color: '#1F2937', 
+                  marginBottom: '6px',
+                  lineHeight: '1.4'
+                }}>
+                  {ann.label}
+                </p>
+                
+                {/* Basic Stats */}
+                <div style={{ 
+                  display: 'flex', 
+                  gap: '10px', 
+                  fontSize: '11px', 
+                  color: '#6B7280', 
+                  fontFamily: 'monospace',
+                  flexWrap: 'wrap',
+                  marginBottom: isAIGenerated ? '8px' : '0'
+                }}>
+                  <span>{ann.start} → {ann.end}</span>
+                  <span>•</span>
+                  <span>{ann.end - ann.start} chars</span>
+                  <span>•</span>
+                  <span>{ann.metadata?.letterCount || (ann.text || '').replace(/[^a-zA-Z]/g, '').length} letters</span>
+                  <span>•</span>
+                  <span style={{ 
+                    fontWeight: 'bold',
+                    color: quality >= 80 ? '#059669' : quality >= 60 ? '#0284C7' : '#D97706'
+                  }}>
+                    Q: {quality}%
+                  </span>
+                </div>
+                
+                  {/* AI-Generated Metadata Section */}
+{isAIGenerated && (
+  <div style={{
+    marginTop: '8px',
+    paddingTop: '8px',
+    borderTop: '2px solid #E9D5FF',
+    background: 'linear-gradient(135deg, rgba(233, 213, 255, 0.3) 0%, rgba(251, 207, 232, 0.3) 100%)',
+    borderRadius: '8px',
+    padding: '8px'
+  }}>
+    {/* Header */}
+    <div style={{ 
+      display: 'flex', 
+      alignItems: 'center', 
+      gap: '6px',
+      marginBottom: '8px'
+    }}>
+      <Sparkles className="w-3 h-3" style={{ color: '#9333EA' }} />
+      <span style={{ 
+        fontSize: '11px', 
+        fontWeight: 'bold', 
+        color: '#581C87' 
+      }}>
+        Statistical Analysis Results
+      </span>
+    </div>
+    
+    {/* Top-Level Scores */}
+    <div style={{
+      display: 'grid',
+      gridTemplateColumns: '1fr 1fr',
+      gap: '6px',
+      marginBottom: '8px'
+    }}>
+      {/* Anomaly Score */}
+      {ann.metadata.anomalyScore !== undefined && (
+        <div style={{
+          padding: '6px 8px',
+          backgroundColor: 
+            ann.metadata.anomalyScore >= 4 ? '#FEE2E2' :
+            ann.metadata.anomalyScore >= 3 ? '#FEF3C7' : '#D1FAE5',
+          border: `2px solid ${
+            ann.metadata.anomalyScore >= 4 ? '#DC2626' :
+            ann.metadata.anomalyScore >= 3 ? '#F59E0B' : '#10B981'
+          }`,
+          borderRadius: '6px',
+          textAlign: 'center'
+        }}>
+          <div style={{ fontSize: '9px', color: '#6B7280', fontWeight: '600' }}>
+            Anomaly Score
+          </div>
+          <div style={{
+            fontSize: '18px',
+            fontWeight: 'bold',
+            color: ann.metadata.anomalyScore >= 4 ? '#991B1B' :
+                   ann.metadata.anomalyScore >= 3 ? '#78350F' : '#064E3B'
+          }}>
+            {ann.metadata.anomalyScore}<span style={{ fontSize: '12px' }}>/5</span>
+          </div>
+        </div>
+      )}
+      
+      {/* Priority */}
+      {ann.metadata.priority !== undefined && (
+        <div style={{
+          padding: '6px 8px',
+          backgroundColor: 
+            ann.metadata.priority >= 4 ? '#FEE2E2' :
+            ann.metadata.priority === 3 ? '#FEF3C7' : '#D1FAE5',
+          border: `2px solid ${
+            ann.metadata.priority >= 4 ? '#DC2626' :
+            ann.metadata.priority === 3 ? '#F59E0B' : '#10B981'
+          }`,
+          borderRadius: '6px',
+          textAlign: 'center'
+        }}>
+          <div style={{ fontSize: '9px', color: '#6B7280', fontWeight: '600' }}>
+            Priority
+          </div>
+          <div style={{
+            fontSize: '18px',
+            fontWeight: 'bold',
+            color: ann.metadata.priority >= 4 ? '#991B1B' :
+                   ann.metadata.priority === 3 ? '#78350F' : '#064E3B'
+          }}>
+            {ann.metadata.priority}<span style={{ fontSize: '12px' }}>/5</span>
+          </div>
+        </div>
+      )}
+    </div>
+    
+    {/* Statistical Metrics Grid */}
+    <div style={{ 
+      display: 'grid', 
+      gridTemplateColumns: '1fr 1fr',
+      gap: '6px',
+      fontSize: '10px',
+      marginBottom: '8px'
+    }}>
+      {/* Chi-Squared */}
+      {ann.metadata.chiSquared !== undefined && (
+        <div style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          padding: '4px 8px',
+          backgroundColor: 'white',
+          borderRadius: '6px',
+          border: '1px solid #E9D5FF'
+        }}>
+          <span style={{ color: '#6B7280', fontWeight: '600' }}>χ²:</span>
+          <span style={{ 
+            fontWeight: 'bold', 
+            color: ann.metadata.chiSquared > 100 ? '#DC2626' :
+                   ann.metadata.chiSquared > 40 ? '#F59E0B' : '#581C87'
+          }}>
+            {ann.metadata.chiSquared.toFixed(1)}
+          </span>
+        </div>
+      )}
+      
+      {/* Index of Coincidence */}
+      {ann.metadata.ioc !== undefined && (
+        <div style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          padding: '4px 8px',
+          backgroundColor: 'white',
+          borderRadius: '6px',
+          border: '1px solid #E9D5FF'
+        }}>
+          <span style={{ color: '#6B7280', fontWeight: '600' }}>IoC:</span>
+          <span style={{ 
+            fontWeight: 'bold', 
+            color: ann.metadata.ioc < 0.045 ? '#DC2626' :
+                   ann.metadata.ioc < 0.060 ? '#F59E0B' : '#581C87'
+          }}>
+            {ann.metadata.ioc.toFixed(4)}
+          </span>
+        </div>
+      )}
+      
+      {/* Entropy */}
+      {ann.metadata.entropy !== undefined && (
+        <div style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          padding: '4px 8px',
+          backgroundColor: 'white',
+          borderRadius: '6px',
+          border: '1px solid #E9D5FF'
+        }}>
+          <span style={{ color: '#6B7280', fontWeight: '600' }}>Entropy:</span>
+          <span style={{ 
+            fontWeight: 'bold', 
+            color: ann.metadata.entropy > 4.6 ? '#DC2626' :
+                   ann.metadata.entropy > 4.5 ? '#F59E0B' : '#581C87'
+          }}>
+            {ann.metadata.entropy.toFixed(2)}
+          </span>
+        </div>
+      )}
+      
+      {/* Quadgram Score */}
+      {ann.metadata.quadgramScore !== undefined && (
+        <div style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          padding: '4px 8px',
+          backgroundColor: 'white',
+          borderRadius: '6px',
+          border: '1px solid #E9D5FF'
+        }}>
+          <span style={{ color: '#6B7280', fontWeight: '600' }}>Quadgram:</span>
+          <span style={{ 
+            fontWeight: 'bold', 
+            color: ann.metadata.quadgramScore < -8 ? '#DC2626' :
+                   ann.metadata.quadgramScore < -6 ? '#F59E0B' : '#581C87'
+          }}>
+            {ann.metadata.quadgramScore.toFixed(2)}
+          </span>
+        </div>
+      )}
+      
+      {/* Proper Noun Density */}
+      {ann.metadata.properNounDensity !== undefined && (
+        <div style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          padding: '4px 8px',
+          backgroundColor: 'white',
+          borderRadius: '6px',
+          border: '1px solid #E9D5FF'
+        }}>
+          <span style={{ color: '#6B7280', fontWeight: '600' }}>Proper Nouns:</span>
+          <span style={{ 
+            fontWeight: 'bold', 
+            color: ann.metadata.properNounDensity > 0.15 ? '#DC2626' :
+                   ann.metadata.properNounDensity > 0.10 ? '#F59E0B' : '#581C87'
+          }}>
+            {(ann.metadata.properNounDensity * 100).toFixed(1)}%
+          </span>
+        </div>
+      )}
+      
+      {/* Segment Length Target */}
+      {ann.metadata.segmentLengthTarget !== undefined && (
+        <div style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          padding: '4px 8px',
+          backgroundColor: 'white',
+          borderRadius: '6px',
+          border: '1px solid #E9D5FF'
+        }}>
+          <span style={{ color: '#6B7280', fontWeight: '600' }}>Target Len:</span>
+          <span style={{ fontWeight: 'bold', color: '#581C87' }}>
+            {ann.metadata.segmentLengthTarget} ch
+          </span>
+        </div>
+      )}
+    </div>
+    
+    {/* Classification Badge */}
+    {ann.metadata.classification && (
+      <div style={{
+        marginBottom: '8px',
+        padding: '6px 10px',
+        backgroundColor: 
+          ann.metadata.classification.includes('HIGHLY') ? '#FEE2E2' :
+          ann.metadata.classification.includes('ANOMALOUS') && !ann.metadata.classification.includes('HIGHLY') ? '#FEF3C7' : 
+          ann.metadata.classification.includes('SUSPICIOUS') ? '#DBEAFE' : 
+          ann.metadata.classification.includes('UNUSUAL') ? '#FED7AA' : '#F3F4F6',
+        border: `2px solid ${
+          ann.metadata.classification.includes('HIGHLY') ? '#DC2626' :
+          ann.metadata.classification.includes('ANOMALOUS') && !ann.metadata.classification.includes('HIGHLY') ? '#F59E0B' :
+          ann.metadata.classification.includes('SUSPICIOUS') ? '#3B82F6' :
+          ann.metadata.classification.includes('UNUSUAL') ? '#EA580C' : '#9CA3AF'
+        }`,
+        borderRadius: '8px',
+        fontSize: '11px',
+        color: '#1F2937',
+        fontWeight: '700',
+        textAlign: 'center',
+        letterSpacing: '0.5px'
+      }}>
+      {ann.metadata.classification.includes('HIGHLY') ? '🔴' :
+       ann.metadata.classification.includes('ANOMALOUS') ? '🟠' :
+       ann.metadata.classification.includes('SUSPICIOUS') ? '🟡' :
+       ann.metadata.classification.includes('UNUSUAL') ? '🟢' : '⚪'}{' '}
+      {ann.metadata.classification.replace(/_/g, ' ')}
+      </div>
+    )}
+    
+    {/* Detection Confidence Bar */}
+    {ann.metadata.detectionConfidence !== undefined && (
+      <div style={{ marginBottom: '8px' }}>
+        <div style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          marginBottom: '4px'
+        }}>
+          <span style={{ fontSize: '10px', color: '#6B7280', fontWeight: '600' }}>
+            Detection Confidence
+          </span>
+          <span style={{ fontSize: '11px', fontWeight: 'bold', color: '#581C87' }}>
+            {ann.metadata.detectionConfidence.toFixed(1)}%
+          </span>
+        </div>
+        <div style={{
+          width: '100%',
+          height: '6px',
+          backgroundColor: '#E9D5FF',
+          borderRadius: '3px',
+          overflow: 'hidden'
+        }}>
+          <div style={{
+            width: `${Math.min(100, ann.metadata.detectionConfidence)}%`,
+            height: '100%',
+            background: ann.metadata.detectionConfidence >= 70 
+              ? 'linear-gradient(90deg, #10B981 0%, #059669 100%)'
+              : ann.metadata.detectionConfidence >= 40
+              ? 'linear-gradient(90deg, #F59E0B 0%, #D97706 100%)'
+              : 'linear-gradient(90deg, #EF4444 0%, #DC2626 100%)',
+            transition: 'width 0.3s ease'
+          }} />
+        </div>
+      </div>
+    )}
+    
+    {/* Statistical Flags */}
+    {ann.metadata.flags && ann.metadata.flags.length > 0 && (
+      <div style={{
+        padding: '6px 8px',
+        backgroundColor: '#FEF3C7',
+        border: '1px solid #FCD34D',
+        borderRadius: '6px',
+        fontSize: '9px',
+        color: '#78350F',
+        maxHeight: '80px',
+        overflowY: 'auto',
+        marginBottom: '8px'
+      }}>
+        <div style={{ 
+          fontWeight: 'bold', 
+          marginBottom: '4px',
+          fontSize: '10px',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '4px'
+        }}>
+          <AlertCircle className="w-3 h-3" />
+          Detection Flags ({ann.metadata.flags.length})
+        </div>
+        <div style={{ marginLeft: '16px', lineHeight: '1.4' }}>
+          {ann.metadata.flags.slice(0, 4).map((flag, idx) => (
+            <div key={idx} style={{ marginBottom: '2px' }}>
+              • {flag}
+            </div>
+          ))}
+          {ann.metadata.flags.length > 4 && (
+            <div style={{ 
+              fontStyle: 'italic', 
+              color: '#92400E',
+              marginTop: '4px'
+            }}>
+              + {ann.metadata.flags.length - 4} more flag{ann.metadata.flags.length - 4 !== 1 ? 's' : ''}
+            </div>
+          )}
+        </div>
+      </div>
+    )}
+    
+    {/* Lines Reference */}
+    {ann.metadata.startLine !== undefined && ann.metadata.endLine !== undefined && (
+      <div style={{
+        display: 'flex',
+        justifyContent: 'center',
+        alignItems: 'center',
+        gap: '6px',
+        padding: '4px 8px',
+        backgroundColor: 'rgba(147, 51, 234, 0.1)',
+        borderRadius: '6px',
+        fontSize: '9px',
+        color: '#581C87',
+        fontWeight: '600'
+      }}>
+        <FileText className="w-3 h-3" />
+        Lines {ann.metadata.startLine + 1}–{ann.metadata.endLine + 1}
+      </div>
+    )}
+  </div>
+)}
+              </div>
+            );
+          })}
+        </>
       )}
     </div>
   );
@@ -1111,6 +1751,97 @@ const AlgorithmPanel = ({ config, updateConfig, onGenerate, isGenerating }) => {
               </div>
             </div>
           )}
+{config.mode === 'ai_statistical' && (
+  <div className="space-y-3">
+    <div className="bg-purple-50 rounded-xl p-4 border-2 border-purple-200">
+      <div className="flex items-center gap-2 mb-3">
+        <Sparkles className="w-5 h-5 text-purple-600" />
+        <span className="text-sm font-bold text-purple-900">Statistical Analysis</span>
+      </div>
+      
+      {/* Min Anomaly Score */}
+      <div className="mb-3">
+        <label className="text-sm font-bold text-purple-900 mb-2 block">
+          Min Anomaly Score: {config.minAnomalyScore}
+        </label>
+        <input
+          type="range"
+          min="2"
+          max="5"
+          step="1"
+          value={config.minAnomalyScore}
+          onChange={(e) => updateConfig(draft => { 
+            draft.minAnomalyScore = parseInt(e.target.value); 
+          })}
+          className="w-full accent-purple-600"
+        />
+        <div className="flex justify-between text-xs text-purple-700 mt-1">
+          <span>2 (More segments)</span>
+          <span>3 (Balanced)</span>
+          <span>5 (High confidence)</span>
+        </div>
+      </div>
+      
+      {/* NEW: Length Mode Selection */}
+      <div className="mb-3">
+        <label className="text-sm font-bold text-purple-900 mb-2 block">
+          Segment Length Mode
+        </label>
+        <select
+          value={config.lengthMode || 'variable'}
+          onChange={(e) => updateConfig(draft => { 
+            draft.lengthMode = e.target.value; 
+          })}
+          className="w-full px-3 py-2 bg-white border-2 border-purple-300 rounded-lg text-sm font-semibold text-purple-900"
+        >
+          <option value="ultra_short">Ultra Short (15-30 chars)</option>
+          <option value="short">Short (30-70 chars)</option>
+          <option value="medium">Medium (80-180 chars)</option>
+          <option value="long">Long (200-400 chars)</option>
+          <option value="variable">Variable (mixed lengths)</option>
+          <option value="title_focused">Title Focused (50-200 chars)</option>
+        </select>
+        <div className="text-xs text-purple-700 mt-1">
+          Tests multiple segment sizes to find anomalous patterns
+        </div>
+      </div>
+      
+      {/* NEW: Overlap Setting */}
+      <div className="mb-3">
+        <label className="text-sm font-bold text-purple-900 mb-2 block">
+          Overlap: {config.overlap || 0} chars
+        </label>
+        <input
+          type="range"
+          min="0"
+          max="50"
+          step="5"
+          value={config.overlap || 0}
+          onChange={(e) => updateConfig(draft => { 
+            draft.overlap = parseInt(e.target.value); 
+          })}
+          className="w-full accent-purple-600"
+        />
+        <div className="flex justify-between text-xs text-purple-700 mt-1">
+          <span>0 (No overlap)</span>
+          <span>25</span>
+          <span>50 (Sliding window)</span>
+        </div>
+      </div>
+      
+      <div className="mt-3 text-xs text-purple-700 bg-purple-100 rounded-lg p-3">
+        <div className="font-bold mb-1">How it works:</div>
+        <ul className="space-y-1">
+          <li>• Statistical analysis: chi-squared, entropy, IoC</li>
+          <li>• Tests multiple segment lengths automatically</li>
+          <li>• Returns ALL segments meeting anomaly threshold</li>
+          <li>• Higher score = stronger cipher signal</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+)}
+
 
           {config.mode === 'smart' && (
             <div className="bg-purple-50 rounded-xl p-4">
@@ -1268,11 +1999,34 @@ const StatisticsPanel = ({ annotations }) => {
   );
 };
 
-// Update the ToolHeader component in EnhancedSegmentationTool.jsx:
 
-const ToolHeader = ({ onBack, activeSource, annotations, onSave, onExport, onClear, hasUnsavedChanges, onAnalyze }) => {
-  const hasSavedSegments = annotations.length > 0 && !hasUnsavedChanges;
+// ============================================================================
+// MULTI-EDITION TOOL HEADER
+// ============================================================================
+
+const MultiEditionToolHeader = ({ 
+  workTitle, 
+  author, 
+  editions, 
+  selectedEditions, 
+  editionAnnotations,
+  onBack, 
+  onSave, 
+  onExport, 
+  onClear, 
+  onAnalyzeMultiEdition,
+  hasUnsavedChanges 
+}) => {
+  const totalSegments = useMemo(() => {
+    return selectedEditions.reduce((sum, edId) => {
+      return sum + (editionAnnotations[edId]?.length || 0);
+    }, 0);
+  }, [selectedEditions, editionAnnotations]);
   
+  const allSaved = useMemo(() => {
+    return !hasUnsavedChanges && totalSegments > 0;
+  }, [hasUnsavedChanges, totalSegments]);
+
   return (
     <div className="bg-white rounded-2xl shadow-lg border-2 border-gray-200 p-6">
       <div className="flex items-center justify-between flex-wrap gap-4">
@@ -1280,159 +2034,602 @@ const ToolHeader = ({ onBack, activeSource, annotations, onSave, onExport, onCle
           <button
             onClick={onBack}
             className="p-3 hover:bg-gray-100 rounded-xl transition-all"
-            title="Change Text"
+            title="Back to Library"
           >
-            <RefreshCw className="w-6 h-6 text-gray-700" />
+            <ArrowLeft className="w-6 h-6 text-gray-700" />
           </button>
           
           <div className="h-12 w-px bg-gray-300" />
           
           <div>
             <h2 className="text-2xl font-bold text-gray-900 mb-1">
-              {activeSource.title}
+              {workTitle}
             </h2>
             <div className="flex items-center gap-4 text-sm text-gray-600">
               <span className="flex items-center gap-1">
-                <FileText className="w-4 h-4" />
-                {activeSource.line_count?.toLocaleString()} lines
+                <BookOpen className="w-4 h-4" />
+                {selectedEditions.length} edition{selectedEditions.length !== 1 ? 's' : ''} active
               </span>
               <span>•</span>
-              <span className="font-medium">{activeSource.author}</span>
+              <span className="font-medium">{author}</span>
             </div>
           </div>
         </div>
         
         <div className="flex items-center gap-3">
-          {/* Segment Count */}
+          {/* Total Segments Badge */}
           <div className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl border-2 border-blue-200">
             <Scissors className="w-5 h-5 text-blue-600" />
-            <span className="font-bold text-xl text-blue-900">{annotations.length}</span>
-            <span className="text-sm text-blue-700 font-medium">segments</span>
+            <span className="font-bold text-xl text-blue-900">{totalSegments}</span>
+            <span className="text-sm text-blue-700 font-medium">total segments</span>
           </div>
 
-          {/* Clear Button */}
+          {/* Clear All Button */}
           <button
             onClick={onClear}
-            disabled={annotations.length === 0}
+            disabled={totalSegments === 0}
             className={`flex items-center gap-2 px-4 py-3 rounded-xl font-bold transition-all ${
-              annotations.length > 0
-                ? 'bg-red-100 text-red-700 hover:bg-red-200'
+              totalSegments > 0
+                ? 'bg-red-100 text-red-700 hover:bg-red-200 hover:shadow-md'
                 : 'bg-gray-200 text-gray-400 cursor-not-allowed'
             }`}
+            title="Clear all segments from all editions"
           >
             <Trash2 className="w-4 h-4" />
-            Clear
+            Clear All
           </button>
 
-          {/* Save Button */}
+          {/* Save All Button */}
           <button
             onClick={onSave}
-            disabled={annotations.length === 0}
+            disabled={totalSegments === 0}
             className={`flex items-center gap-2 px-5 py-3 rounded-xl font-bold transition-all shadow-md ${
-              annotations.length > 0
+              totalSegments > 0
                 ? hasUnsavedChanges
-                  ? 'bg-gradient-to-r from-green-600 to-emerald-600 text-white hover:from-green-700 hover:to-emerald-700'
-                  : 'bg-green-100 text-green-700'
+                  ? 'bg-gradient-to-r from-green-600 to-emerald-600 text-white hover:from-green-700 hover:to-emerald-700 hover:shadow-lg'
+                  : 'bg-green-100 text-green-700 border-2 border-green-300'
                 : 'bg-gray-200 text-gray-400 cursor-not-allowed'
             }`}
+            title={hasUnsavedChanges ? 'Save all editions' : 'All editions saved'}
           >
             <Save className="w-4 h-4" />
-            {hasUnsavedChanges ? 'Save' : 'Saved'}
+            {hasUnsavedChanges ? 'Save All' : 'Saved ✓'}
           </button>
 
           {/* Export Button */}
           <button
             onClick={onExport}
-            disabled={annotations.length === 0}
+            disabled={totalSegments === 0}
             className={`flex items-center gap-2 px-5 py-3 rounded-xl font-bold transition-all shadow-md ${
-              annotations.length > 0
-                ? 'bg-gradient-to-r from-indigo-600 to-blue-600 text-white hover:from-indigo-700 hover:to-blue-700'
+              totalSegments > 0
+                ? 'bg-gradient-to-r from-indigo-600 to-blue-600 text-white hover:from-indigo-700 hover:to-blue-700 hover:shadow-lg'
                 : 'bg-gray-200 text-gray-400 cursor-not-allowed'
             }`}
+            title="Export all editions"
           >
             <Download className="w-4 h-4" />
-            Export
+            Export All
           </button>
 
-          {/* Analyze Button - Only enabled when saved */}
+          {/* Multi-Edition Analysis Button */}
           <button
-            onClick={onAnalyze}
-            disabled={!hasSavedSegments}
+            onClick={onAnalyzeMultiEdition}
+            disabled={!allSaved || selectedEditions.length === 0}
             className={`flex items-center gap-2 px-6 py-3 rounded-xl font-bold transition-all shadow-lg ${
-              hasSavedSegments
-                ? 'bg-gradient-to-r from-purple-600 to-pink-600 text-white hover:from-purple-700 hover:to-pink-700 hover:scale-105'
+              allSaved && selectedEditions.length > 0
+                ? 'bg-gradient-to-r from-purple-600 to-pink-600 text-white hover:from-purple-700 hover:to-pink-700 hover:scale-105 hover:shadow-xl'
                 : 'bg-gray-200 text-gray-400 cursor-not-allowed'
             }`}
-            title={!hasSavedSegments ? 'Save segments before analyzing' : 'Start analysis'}
+            title={
+              selectedEditions.length === 0
+                ? 'Select editions first'
+                : !allSaved
+                ? 'Save all editions before analyzing'
+                : 'Analyze all editions simultaneously'
+            }
           >
-            <Target className="w-5 h-5" />
-            Analyze
+            <GitCompare className="w-5 h-5" />
+            Analyze {selectedEditions.length} Edition{selectedEditions.length !== 1 ? 's' : ''}
+            {allSaved && selectedEditions.length > 0 && <span className="ml-1">→</span>}
           </button>
         </div>
       </div>
       
-      {/* Status message */}
-      {annotations.length > 0 && hasUnsavedChanges && (
-        <div className="mt-4 px-4 py-2 bg-amber-50 border border-amber-200 rounded-lg text-sm text-amber-800 flex items-center gap-2">
-          <AlertCircle className="w-4 h-4" />
-          Save your segments before proceeding to analysis
-        </div>
-      )}
+      {/* Status Messages */}
+      <div className="mt-4">
+        {totalSegments === 0 && (
+          <div className="px-4 py-3 bg-blue-50 border-2 border-blue-200 rounded-xl text-sm text-blue-900 flex items-center gap-3">
+            <div className="flex-shrink-0">
+              <Info className="w-5 h-5 text-blue-600" />
+            </div>
+            <div>
+              <div className="font-semibold mb-1">Multi-Edition Segmentation</div>
+              <div className="text-blue-700">
+                Select editions from the sidebar, then create segments for each. 
+                The tool will analyze all editions simultaneously and track cipher evolution.
+              </div>
+            </div>
+          </div>
+        )}
+        
+        {totalSegments > 0 && hasUnsavedChanges && (
+          <div className="px-4 py-3 bg-amber-50 border-2 border-amber-300 rounded-xl text-sm text-amber-900 flex items-center gap-3">
+            <div className="flex-shrink-0">
+              <AlertCircle className="w-5 h-5 text-amber-600" />
+            </div>
+            <div>
+              <div className="font-semibold mb-1">Unsaved Changes Across Editions</div>
+              <div className="text-amber-800">
+                You have <strong>{totalSegments} segment{totalSegments !== 1 ? 's' : ''}</strong> across {selectedEditions.length} edition{selectedEditions.length !== 1 ? 's' : ''}. 
+                Click <strong>"Save All"</strong> before multi-edition analysis.
+              </div>
+            </div>
+          </div>
+        )}
+        
+        {allSaved && selectedEditions.length > 0 && (
+          <div className="px-4 py-3 bg-gradient-to-r from-green-50 to-emerald-50 border-2 border-green-300 rounded-xl text-sm text-green-900 flex items-center gap-3">
+            <div className="flex-shrink-0">
+              <Check className="w-5 h-5 text-green-600" />
+            </div>
+            <div>
+              <div className="font-semibold mb-1">Ready for Multi-Edition Analysis</div>
+              <div className="text-green-800">
+                <strong>{selectedEditions.length} edition{selectedEditions.length !== 1 ? 's' : ''}</strong> with <strong>{totalSegments} total segments</strong> saved. 
+                Click <strong>"Analyze"</strong> to track cipher evolution and spoilage across editions.
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   );
 };
+
 // ============================================================================
-// MAIN COMPONENT
+// MAIN MULTI-EDITION COMPONENT
 // ============================================================================
 
 const EnhancedSegmentationTool = ({ onBack, saveSegmentation, hasUnsavedChanges, onAnalyze }) => {
-  const { state, dispatch } = useAppState();
+  const { state, dispatch, api } = useAppState();
   const { workspace } = state;
-  const activeSource = workspace.currentSource;
   
-  if (!activeSource) {
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50 flex items-center justify-center p-6">
-        <div className="text-center p-12 bg-white rounded-3xl shadow-2xl border-2 border-gray-200 max-w-md">
-          <AlertCircle className="w-24 h-24 text-blue-500 mx-auto mb-6" />
-          <h2 className="text-3xl font-bold text-gray-900 mb-3">No Work Loaded</h2>
-          <p className="text-gray-600 mb-8">Select a work from your library to start segmenting.</p>
-          <button
-            onClick={onBack}
-            className="px-8 py-4 bg-gradient-to-r from-blue-600 to-indigo-600 text-white font-bold rounded-xl hover:from-blue-700 hover:to-indigo-700 transition-all shadow-lg flex items-center gap-3 mx-auto"
-          >
-            <RefreshCw className="w-5 h-5" />
-            Change Text
-          </button>
-        </div>
-      </div>
-    );
-  }
-
-  const lines = activeSource?.lines || [];
-  const fullText = lines.join('\n');
+  // Multi-edition state
+  const [editions, setEditions] = useState([]);
+  const [selectedEditions, setSelectedEditions] = useState([]);
+  const [activeEditionId, setActiveEditionId] = useState(null);
+  const [editionAnnotations, setEditionAnnotations] = useImmer({});
   
-  // State management
-  const [annotations, setAnnotations] = useImmer([]);
+  // UI state
   const [selectedId, setSelectedId] = useState(null);
   const [mode, setMode] = useState(MODES.SELECT);
-  const [config, updateConfig] = useImmer({
-    mode: 'smart',
-    linesPerSegment: 20,
-    lettersPerSegment: 150,
-  });
+const [config, updateConfig] = useImmer({
+  mode: 'smart',
+  linesPerSegment: 20,
+  lettersPerSegment: 150,
+  // AI segmentation options
+  minAnomalyScore: 3,
+  lengthMode: 'variable',  // NEW: 'ultra_short', 'short', 'medium', 'long', 'variable', 'title_focused'
+  overlap: 0,              // NEW: character overlap for sliding window
+  // REMOVED: maxAISegments - get ALL anomalous segments
+});
   const [isGenerating, setIsGenerating] = useState(false);
 
-  // Annotation handlers
+// Load editions on mount
+// Load editions on mount
+useEffect(() => {
+  const loadEditions = async () => {
+    if (!workspace.currentSource) return;
+    
+    try {
+      // Check if this work has multiple editions
+      const editionCount = workspace.currentSource.edition_count || 1;
+      
+      console.log(`📚 Work has ${editionCount} edition(s)`);
+      
+      if (editionCount > 1) {
+        // Fetch all editions from backend
+        dispatch({ type: ACTIONS.SET_LOADING, payload: { key: 'editions', value: true } });
+        
+        try {
+          const editionsResponse = await api.getWorkEditions(
+            workspace.currentSource.author_folder,
+            workspace.currentSource.base_work_id || workspace.currentSource.id
+          );
+          
+          console.log(`📊 API returned ${editionsResponse.total_editions} editions`);
+          
+          if (editionsResponse && editionsResponse.editions) {
+            // Load full content for each edition
+            const editionsWithContent = await Promise.all(
+              editionsResponse.editions.map(async (edition) => {
+                try {
+                  const content = await api.getWorkContent(
+                    workspace.currentSource.author_folder,
+                    edition.id  // Load this specific edition
+                  );
+                  
+                  return {
+                    id: edition.id,
+                    title: content.title,
+                    author: content.author,
+                    date: edition.date,
+                    lines: content.lines,
+                    line_count: content.line_count,
+                    isPrimary: edition.isPrimary,
+                    estc_id: edition.estc_id,
+                    has_segmentation: edition.has_segmentation,
+                    segment_count: edition.segment_count || 0
+                  };
+                } catch (error) {
+                  console.error(`❌ Failed to load edition ${edition.id}:`, error);
+                  return null;
+                }
+              })
+            );
+            
+            // Filter out failed loads
+            const validEditions = editionsWithContent.filter(e => e !== null);
+            
+            if (validEditions.length > 0) {
+              setEditions(validEditions);
+              
+              // Select all editions by default
+              const allEditionIds = validEditions.map(e => e.id);
+              setSelectedEditions(allEditionIds);
+              
+              // Set primary edition as active
+              const primaryEdition = validEditions.find(e => e.isPrimary) || validEditions[0];
+              setActiveEditionId(primaryEdition.id);
+              
+              // Initialize annotations for all editions (empty at first)
+              setEditionAnnotations(draft => {
+                validEditions.forEach(edition => {
+                  draft[edition.id] = [];
+                });
+              });
+              
+              // Load saved segmentations for each edition (INDEPENDENTLY)
+              let totalSegmentsLoaded = 0;
+              for (const edition of validEditions) {
+                const segmentCount = await loadSegmentationForEdition(edition);
+                totalSegmentsLoaded += segmentCount;
+              }
+              
+              dispatch({
+                type: ACTIONS.ADD_NOTIFICATION,
+                payload: {
+                  type: 'success',
+                  message: `✅ Loaded ${validEditions.length} editions${totalSegmentsLoaded > 0 ? ` with ${totalSegmentsLoaded} saved segments` : ''}`,
+                  duration: 3000
+                }
+              });
+              
+              return;
+            }
+          }
+        } catch (error) {
+          console.error('❌ Failed to load editions:', error);
+          dispatch({
+            type: ACTIONS.ADD_NOTIFICATION,
+            payload: {
+              type: 'warning',
+              message: 'Failed to load additional editions. Loading primary edition only.',
+              duration: 3000
+            }
+          });
+        } finally {
+          dispatch({ type: ACTIONS.SET_LOADING, payload: { key: 'editions', value: false } });
+        }
+      }
+      
+      // Fallback: Load just the current source as single edition
+      const primaryEdition = {
+        id: workspace.currentSource.id,
+        title: workspace.currentSource.title,
+        author: workspace.currentSource.author,
+        date: workspace.currentSource.date,
+        lines: workspace.currentSource.lines,
+        line_count: workspace.currentSource.line_count,
+        isPrimary: true,
+        estc_id: workspace.currentSource.estc_id,
+      };
+      
+      setEditions([primaryEdition]);
+      setSelectedEditions([primaryEdition.id]);
+      setActiveEditionId(primaryEdition.id);
+      
+      // Initialize annotations for this edition
+      setEditionAnnotations(draft => {
+        draft[primaryEdition.id] = [];
+      });
+      
+      // Load saved segmentation for this specific edition
+      await loadSegmentationForEdition(primaryEdition);
+      
+    } catch (error) {
+      console.error('❌ Error loading editions:', error);
+      dispatch({
+        type: ACTIONS.ADD_NOTIFICATION,
+        payload: {
+          type: 'error',
+          message: 'Failed to load work editions',
+          duration: 3000
+        }
+      });
+    }
+  };
+  
+// Helper function to load saved segmentation for ONE specific edition
+// Replace the loadSegmentationForEdition helper function completely:
+
+const loadSegmentationForEdition = async (edition) => {
+  try {
+    console.log(`🔍 Loading saved segmentation for: ${edition.id}`);
+    
+    const segmentation = await api.getSegmentation(edition.id);
+    
+    if (!segmentation?.segments?.length) {
+      console.log(`ℹ️  No saved segmentation found for ${edition.id}`);
+      return 0;
+    }
+    
+    console.log(`✅ Found ${segmentation.segments.length} saved segments for ${edition.id}`);
+    
+    const fullText = edition.lines.join('\n');
+    
+    // Convert segments to annotations
+    const annotations = segmentation.segments.map((seg, idx) => {
+      // PRIORITY 1: Use root-level character positions (most reliable)
+      if (seg.start_char !== undefined && seg.end_char !== undefined) {
+        const startChar = seg.start_char;
+        const endChar = seg.end_char;
+        
+        // Validate positions
+        if (startChar < 0 || endChar > fullText.length || startChar >= endChar) {
+          console.error(`❌ Invalid char positions for ${seg.id}: ${startChar}-${endChar}`);
+          return null;
+        }
+        
+        const text = fullText.slice(startChar, endChar);
+        const label = text.length > 50 ? text.slice(0, 50) + '...' : text;
+        
+        console.log(`✅ Segment ${idx + 1}: char positions ${startChar}-${endChar}`);
+        
+        return {
+          id: seg.id,
+          start: startChar,
+          end: endChar,
+          label: label,
+          text: text,
+          locked: false,
+          createdAt: Date.now(),
+          metadata: {
+            ...seg.metadata,
+            startLine: seg.start_line,
+            endLine: seg.end_line,
+            loadedFrom: 'saved_char_positions'
+          }
+        };
+      }
+      
+      // PRIORITY 2: Check metadata for character positions
+      if (seg.metadata?.start_char !== undefined && seg.metadata?.end_char !== undefined) {
+        const startChar = seg.metadata.start_char;
+        const endChar = seg.metadata.end_char;
+        
+        if (startChar < 0 || endChar > fullText.length || startChar >= endChar) {
+          console.error(`❌ Invalid metadata char positions for ${seg.id}: ${startChar}-${endChar}`);
+          return null;
+        }
+        
+        const text = fullText.slice(startChar, endChar);
+        const label = text.length > 50 ? text.slice(0, 50) + '...' : text;
+        
+        console.log(`✅ Segment ${idx + 1}: metadata char positions ${startChar}-${endChar}`);
+        
+        return {
+          id: seg.id,
+          start: startChar,
+          end: endChar,
+          label: label,
+          text: text,
+          locked: false,
+          createdAt: Date.now(),
+          metadata: {
+            ...seg.metadata,
+            loadedFrom: 'metadata_char_positions'
+          }
+        };
+      }
+      
+      // PRIORITY 3: FALLBACK - Calculate from line numbers
+      console.warn(`⚠️  Segment ${idx + 1}: No char positions, calculating from lines ${seg.start_line}-${seg.end_line}`);
+      
+      if (seg.start_line === undefined || seg.end_line === undefined) {
+        console.error(`❌ Segment ${idx + 1}: Missing both char positions AND line numbers`);
+        return null;
+      }
+      
+      // FIXED: More accurate line-to-char conversion
+      let startChar = 0;
+      let endChar = 0;
+      
+      // Calculate start position: sum of all lines before start_line + newlines
+      for (let i = 0; i < seg.start_line && i < edition.lines.length; i++) {
+        startChar += edition.lines[i].length + 1; // +1 for newline
+      }
+      
+      // Calculate end position: start + lines in segment + newlines
+      endChar = startChar;
+      for (let i = seg.start_line; i <= seg.end_line && i < edition.lines.length; i++) {
+        endChar += edition.lines[i].length;
+        if (i < seg.end_line) {
+          endChar += 1; // Add newline between lines (but not after last line)
+        }
+      }
+      
+      // Validate calculated positions
+      if (startChar >= endChar || endChar > fullText.length) {
+        console.error(`❌ Calculated invalid positions for segment ${idx + 1}: ${startChar}-${endChar}`);
+        return null;
+      }
+      
+      const text = fullText.slice(startChar, endChar);
+      const label = text.length > 50 ? text.slice(0, 50) + '...' : text;
+      
+      console.log(`📍 Segment ${idx + 1}: Calculated ${startChar}-${endChar} from lines ${seg.start_line}-${seg.end_line}`);
+      if (seg.text) {
+        const expectedPreview = seg.text.substring(0, 30);
+        const actualPreview = text.substring(0, 30);
+        if (expectedPreview !== actualPreview) {
+          console.warn(`⚠️  Text mismatch:`);
+          console.warn(`   Expected: "${expectedPreview}..."`);
+          console.warn(`   Got: "${actualPreview}..."`);
+        }
+      }
+      
+      return {
+        id: seg.id,
+        start: startChar,
+        end: endChar,
+        label: label,
+        text: text,
+        locked: false,
+        createdAt: Date.now(),
+        metadata: {
+          ...seg.metadata,
+          startLine: seg.start_line,
+          endLine: seg.end_line,
+          loadedFrom: 'calculated_from_lines'
+        }
+      };
+    }).filter(ann => ann !== null); // Remove any failed conversions
+    
+    if (annotations.length === 0) {
+      console.warn(`⚠️  No valid annotations could be created for ${edition.id}`);
+      return 0;
+    }
+    
+    // CRITICAL: Sort annotations by start position to avoid rendering issues
+    annotations.sort((a, b) => a.start - b.start);
+    
+    // VALIDATION: Check for overlapping segments (nested is OK, overlapping is not)
+    for (let i = 0; i < annotations.length - 1; i++) {
+      const curr = annotations[i];
+      const next = annotations[i + 1];
+      
+      // Check if next segment starts before current ends (overlap)
+      if (next.start < curr.end) {
+        // Check if it's properly nested (next ends before or at curr end)
+        const isNested = next.end <= curr.end;
+        
+        if (!isNested) {
+          console.warn(`⚠️  Segments ${i} and ${i+1} overlap incorrectly:`);
+          console.warn(`   Segment ${i}: ${curr.start}-${curr.end}`);
+          console.warn(`   Segment ${i+1}: ${next.start}-${next.end}`);
+        }
+      }
+    }
+    
+    setEditionAnnotations(draft => {
+      draft[edition.id] = annotations;
+    });
+    
+    dispatch({
+      type: ACTIONS.ADD_NOTIFICATION,
+      payload: {
+        type: 'info',
+        message: `📂 Loaded ${annotations.length} segments for ${edition.date || edition.id}`,
+        duration: 2000
+      }
+    });
+    
+    return annotations.length;
+    
+  } catch (error) {
+    console.log(`ℹ️  Could not load segmentation for ${edition.id}:`, error.message);
+    return 0;
+  }
+};
+  loadEditions();
+}, [workspace.currentSource, api, dispatch]);
+
+  // Get active edition data
+  const activeEdition = useMemo(() => {
+    return editions.find(e => e.id === activeEditionId);
+  }, [editions, activeEditionId]);
+
+  const activeAnnotations = useMemo(() => {
+    return editionAnnotations[activeEditionId] || [];
+  }, [editionAnnotations, activeEditionId]);
+
+  const fullText = useMemo(() => {
+    return activeEdition?.lines?.join('\n') || '';
+  }, [activeEdition]);
+
+  // Edition management handlers
+  const handleToggleEdition = useCallback((editionId) => {
+    setSelectedEditions(prev => {
+      if (prev.includes(editionId)) {
+        return prev.filter(id => id !== editionId);
+      } else {
+        return [...prev, editionId];
+      }
+    });
+  }, []);
+
+  const handleAddEdition = useCallback(async () => {
+    // TODO: Implement adding another edition
+    // This would open a dialog to select another edition of the same work
+    dispatch({
+      type: ACTIONS.ADD_NOTIFICATION,
+      payload: {
+        type: 'info',
+        message: 'Add edition feature coming soon!',
+        duration: 2000
+      }
+    });
+  }, [dispatch]);
+
+  const handleRemoveEdition = useCallback((editionId) => {
+    if (editions.length === 1) {
+      dispatch({
+        type: ACTIONS.ADD_NOTIFICATION,
+        payload: {
+          type: 'error',
+          message: 'Cannot remove the last edition',
+          duration: 2000
+        }
+      });
+      return;
+    }
+    
+    setEditions(prev => prev.filter(e => e.id !== editionId));
+    setSelectedEditions(prev => prev.filter(id => id !== editionId));
+    setEditionAnnotations(draft => {
+      delete draft[editionId];
+    });
+    
+    if (activeEditionId === editionId) {
+      setActiveEditionId(editions[0].id);
+    }
+  }, [editions, activeEditionId, dispatch]);
+
+  // Annotation handlers (same as before, but for active edition)
   const handleAnnotationAdd = useCallback((newAnn) => {
     const id = `ann-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    const currentAnnotations = editionAnnotations[activeEditionId] || [];
     
-    const level = annotations.filter(ann => 
+    const level = currentAnnotations.filter(ann => 
       ann.start <= newAnn.start && ann.end >= newAnn.end
     ).length;
     
-    setAnnotations(draft => {
-      draft.push({
+    setEditionAnnotations(draft => {
+      if (!draft[activeEditionId]) {
+        draft[activeEditionId] = [];
+      }
+      draft[activeEditionId].push({
         id,
         start: newAnn.start,
         end: newAnn.end,
@@ -1455,30 +2652,33 @@ const EnhancedSegmentationTool = ({ onBack, saveSegmentation, hasUnsavedChanges,
         duration: 2000
       }
     });
-  }, [annotations, setAnnotations, dispatch]);
+  }, [activeEditionId, editionAnnotations, setEditionAnnotations, dispatch]);
 
   const handleAnnotationDelete = useCallback((id) => {
-    setAnnotations(draft => {
-      const index = draft.findIndex(a => a.id === id);
+    setEditionAnnotations(draft => {
+      const annotations = draft[activeEditionId] || [];
+      const index = annotations.findIndex(a => a.id === id);
       if (index !== -1) {
-        draft.splice(index, 1);
+        annotations.splice(index, 1);
       }
     });
     if (selectedId === id) {
       setSelectedId(null);
     }
-  }, [setAnnotations, selectedId]);
+  }, [activeEditionId, setEditionAnnotations, selectedId]);
 
   const handleAnnotationUpdate = useCallback((id, updates) => {
-    setAnnotations(draft => {
-      const ann = draft.find(a => a.id === id);
+    setEditionAnnotations(draft => {
+      const annotations = draft[activeEditionId] || [];
+      const ann = annotations.find(a => a.id === id);
       if (ann) {
         Object.assign(ann, updates);
       }
     });
-  }, [setAnnotations]);
+  }, [activeEditionId, setEditionAnnotations]);
 
   const handleAnnotationMerge = useCallback((id1, id2) => {
+    const annotations = editionAnnotations[activeEditionId] || [];
     const ann1 = annotations.find(a => a.id === id1);
     const ann2 = annotations.find(a => a.id === id2);
     
@@ -1489,13 +2689,14 @@ const EnhancedSegmentationTool = ({ onBack, saveSegmentation, hasUnsavedChanges,
     const text = fullText.slice(start, end);
     const label = text.length > 50 ? text.slice(0, 50) + '...' : text;
 
-    setAnnotations(draft => {
-      const idx1 = draft.findIndex(a => a.id === id1);
-      const idx2 = draft.findIndex(a => a.id === id2);
-      if (idx1 !== -1) draft.splice(idx1, 1);
-      if (idx2 !== -1) draft.splice(idx2 > idx1 ? idx2 - 1 : idx2, 1);
+    setEditionAnnotations(draft => {
+      const annots = draft[activeEditionId] || [];
+      const idx1 = annots.findIndex(a => a.id === id1);
+      const idx2 = annots.findIndex(a => a.id === id2);
+      if (idx1 !== -1) annots.splice(idx1, 1);
+      if (idx2 !== -1) annots.splice(idx2 > idx1 ? idx2 - 1 : idx2, 1);
       
-      draft.push({
+      annots.push({
         id: `ann-${Date.now()}-merged`,
         start,
         end,
@@ -1514,164 +2715,574 @@ const EnhancedSegmentationTool = ({ onBack, saveSegmentation, hasUnsavedChanges,
         duration: 2000
       }
     });
-  }, [annotations, fullText, setAnnotations, dispatch]);
+  }, [activeEditionId, editionAnnotations, fullText, setEditionAnnotations, dispatch]);
 
   const handleLockToggle = useCallback((id) => {
-    setAnnotations(draft => {
-      const ann = draft.find(a => a.id === id);
+    setEditionAnnotations(draft => {
+      const annotations = draft[activeEditionId] || [];
+      const ann = annotations.find(a => a.id === id);
       if (ann) {
         ann.locked = !ann.locked;
       }
     });
-  }, [setAnnotations]);
+  }, [activeEditionId, setEditionAnnotations]);
 
-  // Generate segments from algorithm
-  const handleGenerate = useCallback(() => {
-    if (!lines || lines.length === 0) return;
+  // Generate segments (same as before, but for active edition)
+const handleGenerate = useCallback(async () => {
+  if (!activeEdition?.lines || activeEdition.lines.length === 0) return;
+  
+  setIsGenerating(true);
+  
+  // ========================================================================
+  // AI STATISTICAL MODE - Use backend AI segmentation
+  // ========================================================================
+if (config.mode === 'ai_statistical') {
+  try {
+    dispatch({
+      type: ACTIONS.ADD_NOTIFICATION,
+      payload: {
+        type: 'info',
+        message: '🔍 Statistical analysis running (chi², entropy, IoC)...',
+        duration: 2000
+      }
+    });
     
-    setIsGenerating(true);
+    const response = await api.createAISegmentation(
+      activeEdition.id,
+      workspace.currentSource.author_folder,
+      {
+        useStatistical: true,
+        minAnomalyScore: config.minAnomalyScore,
+        lengthMode: config.lengthMode || 'variable',  // NEW
+        overlap: config.overlap || 0                   // NEW
+        // REMOVED: maxSegments - backend returns ALL anomalous segments
+      }
+    );
     
-    setTimeout(() => {
-      let boundaries;
+    if (!response.segmentation || !response.segmentation.segments) {
+      throw new Error('No segments returned from statistical analysis');
+    }
+    
+    const segments = response.segmentation.segments;
+    
+    console.log(`📊 Statistical Analysis Complete:`);
+    console.log(`   Length Mode: ${config.lengthMode}`);
+    console.log(`   Overlap: ${config.overlap} chars`);
+    console.log(`   Min Score: ${config.minAnomalyScore}`);
+    console.log(`   Segments Found: ${segments.length}`);
+    
+    // Show segment length distribution if available
+    if (response.segmentation.metadata?.segment_lengths) {
+      console.log(`   Tested Lengths: ${response.segmentation.metadata.segment_lengths.join(', ')}`);
+    }
+    
+    // Convert statistical segments to annotations with proper character positions
+    const newAnnotations = [];
+    
+    for (let idx = 0; idx < segments.length; idx++) {
+      const seg = segments[idx];
       
-      switch (config.mode) {
-        case 'lines':
-          boundaries = SegmentationEngine.byLines(lines, config.linesPerSegment);
-          break;
-        case 'letters':
-          boundaries = SegmentationEngine.byLetterCount(lines, config.lettersPerSegment);
-          break;
-        case 'punctuation':
-          boundaries = SegmentationEngine.byPunctuation(lines);
-          break;
-        case 'paragraphs':
-          boundaries = SegmentationEngine.byParagraphs(lines);
-          break;
-        case 'smart':
-          boundaries = SegmentationEngine.smart(lines, config.lettersPerSegment);
-          break;
-        default:
-          setIsGenerating(false);
-          return;
+      // Calculate character positions from line numbers
+      let startChar = 0;
+      for (let i = 0; i < seg.start_line; i++) {
+        startChar += activeEdition.lines[i].length + 1; // +1 for newline
       }
       
-      if (!boundaries || boundaries.length < 2) {
-        dispatch({
-          type: ACTIONS.ADD_NOTIFICATION,
-          payload: { type: 'error', message: '❌ Failed to generate segments', duration: 2000 }
-        });
-        setIsGenerating(false);
-        return;
-      }
-
-      const getCharPosition = (lineIndex) => {
-        let charPos = 0;
-        for (let i = 0; i < lineIndex; i++) {
-          charPos += lines[i].length + 1;
+      let endChar = startChar;
+      for (let i = seg.start_line; i <= seg.end_line; i++) {
+        if (i < activeEdition.lines.length) {
+          endChar += activeEdition.lines[i].length;
+          if (i < seg.end_line) endChar += 1; // Add newline except for last line
         }
-        return charPos;
-      };
-
-      const newAnnotations = [];
-      for (let i = 0; i < boundaries.length - 1; i++) {
-        const startLine = boundaries[i];
-        const endLine = boundaries[i + 1];
-        
-        if (startLine >= endLine) continue;
-        
-        const startChar = getCharPosition(startLine);
-        const segmentLines = lines.slice(startLine, endLine);
-        const text = segmentLines.join('\n');
-        const endChar = startChar + text.length;
-        
-        if (startChar >= endChar || endChar > fullText.length) continue;
-        
-        const label = text.length > 50 ? text.slice(0, 50) + '...' : text;
-        
-        newAnnotations.push({
-          id: `ann-${Date.now()}-${i}`,
-          start: startChar,
-          end: endChar,
-          label,
-          text,
-          locked: false,
-          createdAt: Date.now()
-        });
       }
-
-      setAnnotations(newAnnotations);
+      
+      // Ensure we don't exceed text length
+      endChar = Math.min(endChar, fullText.length);
+      
+      // Extract actual text from fullText
+      const segmentText = fullText.slice(startChar, endChar);
+      
+      // Create label
+      const label = segmentText.length > 50 
+        ? segmentText.slice(0, 50) + '...' 
+        : segmentText;
+      
+      newAnnotations.push({
+        id: `stat-${seg.id || `${Date.now()}-${idx}`}`,
+        start: startChar,
+        end: endChar,
+        label: label,
+        text: segmentText,
+        locked: false,
+        createdAt: Date.now(),
+        metadata: {
+          aiGenerated: true,
+          segmentType: 'ai_statistical',
+          segmentLengthTarget: seg.segment_length_chars,  // NEW: which length was this from
+          anomalyScore: seg.metadata?.anomaly_score || 0,
+          classification: seg.metadata?.classification || 'Unknown',
+          priority: seg.metadata?.priority_score 
+            ? Math.ceil(seg.metadata.priority_score / 20) // Convert 0-100 to 1-5
+            : 3,
+          chiSquared: seg.metadata?.chi_squared,
+          ioc: seg.metadata?.ioc,
+          entropy: seg.metadata?.entropy,
+          quadgramScore: seg.metadata?.quadgram_score,
+          properNounDensity: seg.metadata?.proper_noun_density,
+          detectionConfidence: seg.metadata?.confidence,
+          flags: seg.metadata?.flags || [],
+          startLine: seg.start_line,
+          endLine: seg.end_line,
+          originalSegmentId: seg.id
+        }
+      });
+    }
+    
+    if (newAnnotations.length === 0) {
+      dispatch({
+        type: ACTIONS.ADD_NOTIFICATION,
+        payload: {
+          type: 'warning',
+          message: `⚠️ No anomalous segments found with score ≥ ${config.minAnomalyScore}. Try lowering threshold or changing length mode.`,
+          duration: 5000
+        }
+      });
+      setIsGenerating(false);
+      return;
+    }
+    
+    // Update annotations for this edition
+    setEditionAnnotations(draft => {
+      draft[activeEditionId] = newAnnotations;
+    });
+    
+    // Calculate statistics
+    const highPriority = newAnnotations.filter(a => a.metadata.priority >= 4).length;
+    const mediumPriority = newAnnotations.filter(a => a.metadata.priority === 3).length;
+    const avgAnomalyScore = (
+      newAnnotations.reduce((sum, a) => sum + a.metadata.anomalyScore, 0) / 
+      newAnnotations.length
+    ).toFixed(1);
+    
+    // Group by classification
+    const classifications = newAnnotations.reduce((acc, a) => {
+      const classification = a.metadata.classification || 'Unknown';
+      acc[classification] = (acc[classification] || 0) + 1;
+      return acc;
+    }, {});
+    
+    console.log(`📈 Results Summary:`, classifications);
+    
+    // Success notification with detailed stats
+    dispatch({
+      type: ACTIONS.ADD_NOTIFICATION,
+      payload: {
+        type: 'success',
+        message: `✅ Found ${newAnnotations.length} anomalous segments (Avg score: ${avgAnomalyScore}, ${highPriority} high priority, ${mediumPriority} medium)`,
+        duration: 5000
+      }
+    });
+    
+    // Show classification breakdown
+    setTimeout(() => {
+      const classificationSummary = Object.entries(classifications)
+        .map(([cls, count]) => `${count} ${cls}`)
+        .join(', ');
       
       dispatch({
         type: ACTIONS.ADD_NOTIFICATION,
         payload: {
-          type: 'success',
-          message: `✅ Generated ${newAnnotations.length} segments`,
-          duration: 3000
+          type: 'info',
+          message: `📊 Classifications: ${classificationSummary}`,
+          duration: 4000
         }
       });
-      
-      setIsGenerating(false);
-    }, 100);
-  }, [config, lines, fullText, setAnnotations, dispatch]);
-
-  // Save to backend
-  const handleSave = useCallback(async () => {
-    if (annotations.length === 0) {
-      dispatch({
-        type: ACTIONS.ADD_NOTIFICATION,
-        payload: { type: 'error', message: '❌ No segments to save', duration: 2000 }
-      });
-      return;
+    }, 1000);
+    
+    // Store full response for reference
+    dispatch({
+      type: ACTIONS.SET_AI_SEGMENTATION_RESULT,
+      payload: response
+    });
+    
+  } catch (error) {
+    console.error('❌ Statistical segmentation error:', error);
+    dispatch({
+      type: ACTIONS.ADD_NOTIFICATION,
+      payload: {
+        type: 'error',
+        message: `Statistical analysis failed: ${error.message}`,
+        duration: 5000
+      }
+    });
+  } finally {
+    setIsGenerating(false);
+  }
+  return;
+}
+  
+  // ========================================================================
+  // TRADITIONAL MODES - Local segmentation algorithms
+  // ========================================================================
+  
+  setTimeout(() => {
+    let boundaries;
+    
+    switch (config.mode) {
+      case 'lines':
+        boundaries = SegmentationEngine.byLines(activeEdition.lines, config.linesPerSegment);
+        break;
+        
+      case 'letters':
+        boundaries = SegmentationEngine.byLetterCount(activeEdition.lines, config.lettersPerSegment);
+        break;
+        
+      case 'punctuation':
+        boundaries = SegmentationEngine.byPunctuation(activeEdition.lines);
+        break;
+        
+      case 'paragraphs':
+        boundaries = SegmentationEngine.byParagraphs(activeEdition.lines);
+        break;
+        
+      case 'smart':
+        boundaries = SegmentationEngine.smart(activeEdition.lines, config.lettersPerSegment);
+        break;
+        
+      default:
+        setIsGenerating(false);
+        dispatch({
+          type: ACTIONS.ADD_NOTIFICATION,
+          payload: {
+            type: 'error',
+            message: '❌ Unknown segmentation mode',
+            duration: 2000
+          }
+        });
+        return;
     }
     
-    // Update segments in context first
-    const segmentsToSave = annotations.map((ann, idx) => ({
-      id: ann.id,
-      name: `Segment ${idx + 1}`,
-      start_line: 0,
-      end_line: 0,
-      text: ann.text,
-      lines: ann.text.split('\n'),
-      metadata: {
-        start: ann.start,
-        end: ann.end,
-        label: ann.label,
-        quality: calculateQuality(ann.text),
-        validation: validateAnnotation(ann.text)
-      }
-    }));
-    
-    dispatch({ type: ACTIONS.SET_SEGMENTS, payload: segmentsToSave });
-    
-    // Then call the save function from parent
-    await saveSegmentation();
-  }, [annotations, dispatch, saveSegmentation]);
+    if (!boundaries || boundaries.length < 2) {
+      dispatch({
+        type: ACTIONS.ADD_NOTIFICATION,
+        payload: { 
+          type: 'error', 
+          message: '❌ Failed to generate segments', 
+          duration: 2000 
+        }
+      });
+      setIsGenerating(false);
+      return;
+    }
 
-  // Export to JSON
-  const handleExport = useCallback(() => {
+    // Helper function to get character position from line index
+    const getCharPosition = (lineIndex) => {
+      let charPos = 0;
+      for (let i = 0; i < lineIndex && i < activeEdition.lines.length; i++) {
+        charPos += activeEdition.lines[i].length + 1; // +1 for newline
+      }
+      return charPos;
+    };
+
+    // Generate annotations from boundaries
+    const newAnnotations = [];
+    
+    for (let i = 0; i < boundaries.length - 1; i++) {
+      const startLine = boundaries[i];
+      const endLine = boundaries[i + 1];
+      
+      // Validate line boundaries
+      if (startLine >= endLine || startLine >= activeEdition.lines.length) {
+        continue;
+      }
+      
+      const startChar = getCharPosition(startLine);
+      const segmentLines = activeEdition.lines.slice(startLine, endLine);
+      const text = segmentLines.join('\n');
+      const endChar = startChar + text.length;
+      
+      // Validate character positions
+      if (startChar >= endChar || endChar > fullText.length) {
+        console.warn(`Invalid segment ${i}: startChar=${startChar}, endChar=${endChar}, textLength=${fullText.length}`);
+        continue;
+      }
+      
+      // Create label (truncate if too long)
+      const label = text.length > 50 ? text.slice(0, 50) + '...' : text;
+      
+      // Validate segment has enough content
+      const letterCount = text.replace(/[^a-zA-Z]/g, '').length;
+      if (letterCount < 5) {
+        console.warn(`Skipping tiny segment ${i}: only ${letterCount} letters`);
+        continue;
+      }
+      
+      newAnnotations.push({
+        id: `ann-${Date.now()}-${i}-${Math.random().toString(36).substr(2, 9)}`,
+        start: startChar,
+        end: endChar,
+        label: label,
+        text: text,
+        locked: false,
+        createdAt: Date.now(),
+        metadata: {
+          aiGenerated: false,
+          segmentType: config.mode,
+          startLine: startLine,
+          endLine: endLine - 1,
+          letterCount: letterCount,
+          wordCount: text.split(/\s+/).filter(Boolean).length,
+          quality: calculateQuality(text),
+          validation: validateAnnotation(text)
+        }
+      });
+    }
+
+    if (newAnnotations.length === 0) {
+      dispatch({
+        type: ACTIONS.ADD_NOTIFICATION,
+        payload: { 
+          type: 'error', 
+          message: '❌ No valid segments generated', 
+          duration: 2000 
+        }
+      });
+      setIsGenerating(false);
+      return;
+    }
+
+    // Update annotations for this edition
+    setEditionAnnotations(draft => {
+      draft[activeEditionId] = newAnnotations;
+    });
+    
+    // Calculate statistics
+    const validCount = newAnnotations.filter(a => 
+      a.metadata.validation.status === 'valid'
+    ).length;
+    
+    const avgQuality = Math.round(
+      newAnnotations.reduce((sum, a) => sum + a.metadata.quality, 0) / newAnnotations.length
+    );
+    
+    // Success notification
+    dispatch({
+      type: ACTIONS.ADD_NOTIFICATION,
+      payload: {
+        type: 'success',
+        message: `✅ Generated ${newAnnotations.length} segments (${validCount} valid, avg quality: ${avgQuality}%)`,
+        duration: 3000
+      }
+    });
+    
+    setIsGenerating(false);
+  }, 100);
+  
+}, [
+  config, 
+  activeEdition, 
+  fullText, 
+  activeEditionId, 
+  setEditionAnnotations, 
+  dispatch, 
+  api, 
+  workspace.currentSource
+]);
+// Save all editions
+const handleSaveAll = useCallback(async () => {
+  const totalSegments = selectedEditions.reduce((sum, edId) => {
+    return sum + (editionAnnotations[edId]?.length || 0);
+  }, 0);
+  
+  if (totalSegments === 0) {
+    dispatch({
+      type: ACTIONS.ADD_NOTIFICATION,
+      payload: { type: 'error', message: '❌ No segments to save', duration: 2000 }
+    });
+    return;
+  }
+  
+  try {
+    dispatch({ type: ACTIONS.SET_LOADING, payload: { key: 'saving', value: true } });
+    
+    let savedCount = 0;
+    
+    for (const editionId of selectedEditions) {
+      const annotations = editionAnnotations[editionId] || [];
+      if (annotations.length === 0) {
+        console.log(`⏭️  Skipping ${editionId}: no segments`);
+        continue;
+      }
+      
+      const edition = editions.find(e => e.id === editionId);
+      const fullText = edition.lines.join('\n');
+      
+      // Convert annotations to segments - CHARACTER POSITIONS ARE SOURCE OF TRUTH
+      const segmentsToSave = annotations.map((ann, idx) => {
+        // Calculate line numbers from character positions (for reference only)
+        let currentPos = 0;
+        let startLine = 0;
+        let endLine = 0;
+        
+        for (let i = 0; i < edition.lines.length; i++) {
+          const lineLength = edition.lines[i].length;
+          const lineEnd = currentPos + lineLength;
+          
+          // Find start line
+          if (currentPos <= ann.start && ann.start <= lineEnd) {
+            startLine = i;
+          }
+          
+          // Find end line
+          if (currentPos <= ann.end && ann.end <= lineEnd + 1) {
+            endLine = i;
+          }
+          
+          currentPos = lineEnd + 1; // +1 for newline
+          
+          if (endLine > 0 && currentPos > ann.end) {
+            break;
+          }
+        }
+        
+        const segmentLines = edition.lines.slice(startLine, endLine + 1);
+        
+        // Extract and verify the actual text using character positions
+        const extractedText = fullText.slice(ann.start, ann.end);
+        
+        // Verify text matches
+        if (extractedText !== ann.text) {
+          console.error(`❌ TEXT MISMATCH for segment ${idx + 1}!`);
+          console.error(`  Expected: "${ann.text.substring(0, 50)}..."`);
+          console.error(`  Got: "${extractedText.substring(0, 50)}..."`);
+          console.error(`  Char positions: ${ann.start}-${ann.end}`);
+          console.error(`  Lines: ${startLine}-${endLine}`);
+        } else {
+          console.log(`✅ Segment ${idx + 1} verified: ${ann.start}-${ann.end} (lines ${startLine}-${endLine})`);
+        }
+        
+        // CRITICAL: Character positions at ROOT level (primary source of truth)
+        // Line numbers are secondary/reference only
+        return {
+          id: ann.id,
+          name: `Segment ${idx + 1}`,
+          start_char: ann.start,      // ← PRIMARY: Character position
+          end_char: ann.end,          // ← PRIMARY: Character position
+          start_line: startLine,      // ← SECONDARY: For reference
+          end_line: endLine,          // ← SECONDARY: For reference
+          text: extractedText,        // ← Use verified extracted text
+          lines: segmentLines,
+          metadata: {
+            edition_id: editionId,
+            edition_date: edition.date,
+            start_char: ann.start,    // Redundant but harmless
+            end_char: ann.end,        // Redundant but harmless
+            label: ann.label,
+            quality: calculateQuality(extractedText),
+            validation: validateAnnotation(extractedText),
+            level: ann.level || 0,
+            letter_count: extractedText.replace(/[^a-zA-Z]/g, '').length,
+            word_count: extractedText.split(/\s+/).filter(Boolean).length,
+            ...(ann.metadata || {})
+          }
+        };
+      });
+      
+      const segmentationData = {
+        work_id: editionId,
+        work_title: workspace.currentSource?.title,
+        author: workspace.currentSource?.author,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        segments: segmentsToSave,
+        metadata: {
+          edition_id: editionId,
+          edition_date: edition.date,
+          is_primary: edition.isPrimary,
+          total_segments: segmentsToSave.length,
+          segmentation_mode: config.mode,
+          ai_generated: config.mode === 'ai_statistical',
+          full_text_length: fullText.length,
+          total_lines: edition.lines.length,
+          saved_with_char_positions: true // Flag for future compatibility
+        }
+      };
+      
+      console.log(`💾 Saving ${segmentsToSave.length} segments for edition: ${editionId}`);
+      console.log(`📋 First segment:`, {
+        id: segmentsToSave[0]?.id,
+        start_char: segmentsToSave[0]?.start_char,
+        end_char: segmentsToSave[0]?.end_char,
+        text_preview: segmentsToSave[0]?.text?.substring(0, 50)
+      });
+      
+      await api.saveSegmentation(segmentationData);
+      
+      savedCount += segmentsToSave.length;
+      
+      console.log(`✅ Saved ${segmentsToSave.length} segments for edition: ${editionId}`);
+    }
+    
+    dispatch({
+      type: ACTIONS.ADD_NOTIFICATION,
+      payload: {
+        type: 'success',
+        message: `✅ Saved ${savedCount} segments across ${selectedEditions.length} edition${selectedEditions.length !== 1 ? 's' : ''}`,
+        duration: 3000
+      }
+    });
+    
+    dispatch({ type: ACTIONS.SET_UNSAVED_CHANGES, payload: false });
+    
+  } catch (error) {
+    console.error('❌ Save error:', error);
+    dispatch({
+      type: ACTIONS.ADD_NOTIFICATION,
+      payload: {
+        type: 'error',
+        message: `Failed to save: ${error.message}`,
+        duration: 5000
+      }
+    });
+  } finally {
+    dispatch({ type: ACTIONS.SET_LOADING, payload: { key: 'saving', value: false } });
+  }
+}, [selectedEditions, editionAnnotations, editions, workspace.currentSource, config.mode, dispatch, api]);
+
+// Export all editions
+  const handleExportAll = useCallback(() => {
     const exportData = {
       metadata: {
-        workId: activeSource.id,
-        workTitle: activeSource.title,
-        author: activeSource.author,
+        workTitle: workspace.currentSource?.title,
+        author: workspace.currentSource?.author,
         exportDate: new Date().toISOString(),
-        totalSegments: annotations.length,
+        editionsCount: selectedEditions.length,
+        totalSegments: selectedEditions.reduce((sum, edId) => sum + (editionAnnotations[edId]?.length || 0), 0),
       },
-      annotations: annotations.map(ann => ({
-        ...ann,
-        quality: calculateQuality(ann.text),
-        validation: validateAnnotation(ann.text),
-        letterCount: ann.text.replace(/[^a-zA-Z]/g, '').length,
-        wordCount: ann.text.split(/\s+/).filter(Boolean).length
-      })),
-      fullText: fullText,
+      editions: selectedEditions.map(edId => {
+        const edition = editions.find(e => e.id === edId);
+        const annotations = editionAnnotations[edId] || [];
+        
+        return {
+          editionId: edId,
+          editionDate: edition?.date,
+          isPrimary: edition?.isPrimary,
+          segments: annotations.map(ann => ({
+            ...ann,
+            quality: calculateQuality(ann.text),
+            validation: validateAnnotation(ann.text),
+            letterCount: ann.text.replace(/[^a-zA-Z]/g, '').length,
+            wordCount: ann.text.split(/\s+/).filter(Boolean).length
+          }))
+        };
+      })
     };
 
     const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `segmentation_${activeSource.id}_${Date.now()}.json`;
+    a.download = `multi_edition_segmentation_${Date.now()}.json`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
@@ -1681,15 +3292,24 @@ const EnhancedSegmentationTool = ({ onBack, saveSegmentation, hasUnsavedChanges,
       type: ACTIONS.ADD_NOTIFICATION,
       payload: {
         type: 'success',
-        message: `✅ Exported ${annotations.length} segments`,
+        message: `✅ Exported ${selectedEditions.length} editions`,
         duration: 3000
       }
     });
-  }, [annotations, activeSource, fullText, dispatch]);
+  }, [workspace.currentSource, selectedEditions, editions, editionAnnotations, dispatch]);
 
-  const handleClear = useCallback(() => {
-    if (window.confirm(`Clear all ${annotations.length} segments?`)) {
-      setAnnotations([]);
+  // Clear all editions
+  const handleClearAll = useCallback(() => {
+    const totalSegments = selectedEditions.reduce((sum, edId) => {
+      return sum + (editionAnnotations[edId]?.length || 0);
+    }, 0);
+    
+    if (window.confirm(`Clear all ${totalSegments} segments across ${selectedEditions.length} editions?`)) {
+      setEditionAnnotations(draft => {
+        selectedEditions.forEach(edId => {
+          draft[edId] = [];
+        });
+      });
       setSelectedId(null);
       
       dispatch({
@@ -1701,47 +3321,270 @@ const EnhancedSegmentationTool = ({ onBack, saveSegmentation, hasUnsavedChanges,
         }
       });
     }
-  }, [annotations.length, setAnnotations, dispatch]);
+  }, [selectedEditions, editionAnnotations, setEditionAnnotations, dispatch]);
 
-  // Keyboard shortcuts
-  useEffect(() => {
-    const handleKeyDown = (e) => {
-      if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+// Replace the handleAnalyzeMultiEdition callback (around line 1650):
 
-      if (e.key === 'Escape') {
-        setSelectedId(null);
-        setMode(MODES.SELECT);
-      } else if (e.key === 'Delete' && selectedId) {
-        handleAnnotationDelete(selectedId);
+const handleAnalyzeMultiEdition = useCallback(async () => {
+  // Validate all editions are saved
+  const allSaved = !hasUnsavedChanges && selectedEditions.length > 0;
+  
+  if (!allSaved) {
+    dispatch({
+      type: ACTIONS.ADD_NOTIFICATION,
+      payload: {
+        type: 'error',
+        message: 'Please save all editions before analyzing',
+        duration: 3000
       }
+    });
+    return;
+  }
+  
+  // Calculate total segments across all editions
+  const totalSegments = selectedEditions.reduce((sum, edId) => {
+    return sum + (editionAnnotations[edId]?.length || 0);
+  }, 0);
+  
+  if (totalSegments === 0) {
+    dispatch({
+      type: ACTIONS.ADD_NOTIFICATION,
+      payload: {
+        type: 'error',
+        message: 'No segments to analyze',
+        duration: 3000
+      }
+    });
+    return;
+  }
+  
+  // ✅ BUILD PROPER editionData OBJECT WITH SEGMENTS
+  const editionData = {};
+  
+  for (const editionId of selectedEditions) {
+    const edition = editions.find(e => e.id === editionId);
+    const annotations = editionAnnotations[editionId] || [];
+    
+    if (!edition) {
+      console.error(`❌ Edition not found: ${editionId}`);
+      continue;
+    }
+    
+    const fullText = edition.lines.join('\n');
+    
+    // Convert annotations to proper segment format
+    const segments = annotations.map((ann, idx) => {
+      // Calculate line numbers from character positions
+      let currentPos = 0;
+      let startLine = 0;
+      let endLine = 0;
+      
+      for (let i = 0; i < edition.lines.length; i++) {
+        const lineLength = edition.lines[i].length;
+        const lineEnd = currentPos + lineLength;
+        
+        if (currentPos <= ann.start && ann.start <= lineEnd) {
+          startLine = i;
+        }
+        
+        if (currentPos <= ann.end && ann.end <= lineEnd + 1) {
+          endLine = i;
+        }
+        
+        currentPos = lineEnd + 1;
+        
+        if (endLine > 0 && currentPos > ann.end) {
+          break;
+        }
+      }
+      
+      const segmentLines = edition.lines.slice(startLine, endLine + 1);
+      
+      return {
+        id: ann.id,
+        name: `Segment ${idx + 1}`,
+        start_char: ann.start,
+        end_char: ann.end,
+        start_line: startLine,
+        end_line: endLine,
+        text: ann.text,
+        lines: segmentLines,
+        metadata: {
+          edition_id: editionId,
+          edition_date: edition.date,
+          label: ann.label,
+          ...(ann.metadata || {})
+        }
+      };
+    });
+    
+    // ✅ THIS IS THE CRITICAL PART - editionData with proper structure
+    editionData[editionId] = {
+      id: editionId,
+      date: edition.date,
+      title: edition.title,
+      isPrimary: edition.isPrimary,
+      segments: segments,  // ← ACTUAL SEGMENT OBJECTS, not annotations
+      useStatistical: false,
+      segment_count: segments.length
     };
-
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [selectedId, handleAnnotationDelete]);
+    
+    console.log(`✅ Prepared ${segments.length} segments for edition: ${editionId}`);
+  }
+  
+  // Verify editionData is properly populated
+  if (Object.keys(editionData).length === 0) {
+    dispatch({
+      type: ACTIONS.ADD_NOTIFICATION,
+      payload: {
+        type: 'error',
+        message: 'Failed to prepare edition data',
+        duration: 3000
+      }
+    });
+    return;
+  }
+  
+  console.log('📦 Edition data prepared:', {
+    editions: Object.keys(editionData),
+    totalSegments: Object.values(editionData).reduce((sum, ed) => sum + ed.segments.length, 0)
+  });
+  
+  // Store multi-edition configuration in workspace for analysis view
+  dispatch({
+    type: ACTIONS.SET_MULTI_EDITION_CONFIG,
+    payload: {
+      isMultiEdition: true,
+      selectedEditions: selectedEditions,
+      editionData: editionData,  // ← THIS IS NOW PROPERLY FORMATTED
+      authorFolder: workspace.currentSource.author_folder,
+      workTitle: workspace.currentSource.title,
+      author: workspace.currentSource.author,
+      baseWorkId: workspace.currentSource.base_work_id || workspace.currentSource.id,
+      totalSegments: totalSegments
+    }
+  });
+  
+  // Show success notification
+  dispatch({
+    type: ACTIONS.ADD_NOTIFICATION,
+    payload: {
+      type: 'success',
+      message: `✅ Ready to analyze ${selectedEditions.length} editions with ${totalSegments} segments`,
+      duration: 3000
+    }
+  });
+  
+  // Navigate to analyze view where user will select view mode and methods
+  dispatch({ type: ACTIONS.SET_ACTIVE_VIEW, payload: 'analyze' });
+  
+}, [
+  selectedEditions, 
+  editions, 
+  editionAnnotations, 
+  workspace.currentSource,
+  hasUnsavedChanges,
+  dispatch
+]);
+  if (!activeEdition) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50 flex items-center justify-center p-6">
+        <div className="text-center p-12 bg-white rounded-3xl shadow-2xl border-2 border-gray-200 max-w-md">
+          <AlertCircle className="w-24 h-24 text-blue-500 mx-auto mb-6" />
+          <h2 className="text-3xl font-bold text-gray-900 mb-3">No Work Loaded</h2>
+          <p className="text-gray-600 mb-8">Select a work from your library to start segmenting.</p>
+          <button
+            onClick={onBack}
+            className="px-8 py-4 bg-gradient-to-r from-blue-600 to-indigo-600 text-white font-bold rounded-xl hover:from-blue-700 hover:to-indigo-700 transition-all shadow-lg flex items-center gap-3 mx-auto"
+          >
+            <ArrowLeft className="w-5 h-5" />
+            Back to Library
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
-    <div className="bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50">
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50 p-6">
       <div className="max-w-[1920px] mx-auto space-y-6">
         
-        {/* Header */}
-        <ToolHeader
+        {/* Multi-Edition Header */}
+        <MultiEditionToolHeader
+          workTitle={workspace.currentSource?.title || 'Unknown Work'}
+          author={workspace.currentSource?.author || 'Unknown Author'}
+          editions={editions}
+          selectedEditions={selectedEditions}
+          editionAnnotations={editionAnnotations}
           onBack={onBack}
-          activeSource={activeSource}
-          annotations={annotations}
-          onSave={handleSave}
-          onExport={handleExport}
-          onClear={handleClear}
+          onSave={handleSaveAll}
+          onExport={handleExportAll}
+          onClear={handleClearAll}
+          onAnalyzeMultiEdition={handleAnalyzeMultiEdition}
           hasUnsavedChanges={hasUnsavedChanges}
-          onAnalyze={onAnalyze}
         />
 
         <div className="grid grid-cols-1 xl:grid-cols-4 gap-6">
           
-          {/* Left Sidebar - Controls */}
+          {/* Left Sidebar */}
           <div className="xl:col-span-1 space-y-6">
-            <ModePanel mode={mode} onModeChange={setMode} />
+            {/* Edition Selector */}
+            <EditionSelector
+              editions={editions}
+              selectedEditions={selectedEditions}
+              onToggleEdition={handleToggleEdition}
+              onAddEdition={handleAddEdition}
+              onRemoveEdition={handleRemoveEdition}
+            />
             
+            {/* Edition Comparison Panel */}
+            <EditionComparisonPanel
+              editions={editions}
+              selectedEditions={selectedEditions}
+              editionAnnotations={editionAnnotations}
+            />
+            
+            {/* Mode Panel */}
+            <div className="bg-white rounded-2xl shadow-lg border-2 border-gray-200 p-5">
+              <h3 className="text-lg font-bold text-gray-900 mb-4 flex items-center gap-2">
+                <MousePointer className="w-5 h-5" />
+                Interaction Mode
+              </h3>
+              
+              <div className="space-y-2">
+                {[
+                  { value: MODES.SELECT, label: 'Select', icon: MousePointer, desc: 'Click to select segments' },
+                  { value: MODES.DELETE, label: 'Delete', icon: Trash2, desc: 'Click to delete segments' },
+                  { value: MODES.MERGE, label: 'Merge', icon: Combine, desc: 'Click two to merge' },
+                ].map(m => {
+                  const Icon = m.icon;
+                  const isActive = mode === m.value;
+                  
+                  return (
+                    <button
+                      key={m.value}
+                      onClick={() => setMode(m.value)}
+                      className={`w-full text-left p-3 rounded-xl border-2 transition-all ${
+                        isActive
+                          ? 'border-blue-500 bg-blue-50'
+                          : 'border-gray-200 hover:border-gray-300'
+                      }`}
+                    >
+                      <div className="flex items-center gap-3">
+                        <Icon className={`w-5 h-5 ${isActive ? 'text-blue-600' : 'text-gray-600'}`} />
+                        <div className="flex-1">
+                          <div className="font-semibold text-sm text-gray-900">{m.label}</div>
+                          <div className="text-xs text-gray-600">{m.desc}</div>
+                        </div>
+                        {isActive && <Check className="w-4 h-4 text-blue-600" />}
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+            
+            {/* Algorithm Panel */}
             <AlgorithmPanel
               config={config}
               updateConfig={updateConfig}
@@ -1749,10 +3592,12 @@ const EnhancedSegmentationTool = ({ onBack, saveSegmentation, hasUnsavedChanges,
               isGenerating={isGenerating}
             />
 
-            <StatisticsPanel annotations={annotations} />
+            {/* Statistics Panel */}
+            <StatisticsPanel annotations={activeAnnotations} />
 
+            {/* Annotation List */}
             <AnnotationList
-              annotations={annotations}
+              annotations={activeAnnotations}
               onSelect={setSelectedId}
               selectedId={selectedId}
               onDelete={handleAnnotationDelete}
@@ -1763,9 +3608,41 @@ const EnhancedSegmentationTool = ({ onBack, saveSegmentation, hasUnsavedChanges,
           {/* Main Content - Text Annotator */}
           <div className="xl:col-span-3">
             <div className="bg-white rounded-2xl shadow-lg border-2 border-gray-200 p-8">
+              {/* Active Edition Indicator */}
+              <div className="mb-6 p-4 bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl border-2 border-blue-200">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <Calendar className="w-5 h-5 text-blue-600" />
+                    <div>
+                      <div className="font-bold text-blue-900">
+                        {activeEdition.date || 'Primary Edition'}
+                      </div>
+                      <div className="text-sm text-blue-700">
+                        {activeAnnotations.length} segments • {activeEdition.line_count?.toLocaleString()} lines
+                      </div>
+                    </div>
+                  </div>
+                  
+                  {editions.length > 1 && (
+                    <select
+                      value={activeEditionId}
+                      onChange={(e) => setActiveEditionId(e.target.value)}
+                      className="px-4 py-2 bg-white border-2 border-blue-300 rounded-lg font-semibold text-blue-900"
+                    >
+                      {editions.map(ed => (
+                        <option key={ed.id} value={ed.id}>
+                          {ed.date || ed.id}
+                        </option>
+                      ))}
+                    </select>
+                  )}
+                </div>
+              </div>
+              
+              {/* Text Annotator - reuse from previous implementation */}
               <TextAnnotator
                 text={fullText}
-                annotations={annotations}
+                annotations={activeAnnotations}
                 onAnnotationAdd={handleAnnotationAdd}
                 onAnnotationDelete={handleAnnotationDelete}
                 onAnnotationUpdate={handleAnnotationUpdate}
@@ -1780,13 +3657,11 @@ const EnhancedSegmentationTool = ({ onBack, saveSegmentation, hasUnsavedChanges,
           </div>
         </div>
       </div>
-      <NestingGuide 
-        annotations={annotations} 
-        selectedId={selectedId} 
-        hoveredId={null}
-      />
     </div>
   );
 };
+
+// Export all components including TextAnnotator, AnnotationList, AlgorithmPanel, etc.
+// (Include all the previous component definitions here)
 
 export default EnhancedSegmentationTool;

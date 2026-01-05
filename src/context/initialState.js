@@ -2,53 +2,18 @@
 
 export const INITIAL_STATE = {
   // ==================== WORKSPACE STATE ====================
-  workspace: {
-    // Current loaded source
-    activeSource: null,
-    currentSource: null,
-    // Example: {
-    //   id: 'faustus_a1_1604',
-    //   title: 'Doctor Faustus A-text',
-    //   author: 'Christopher Marlowe',
-    //   text: '...',
-    //   metadata: {...}
-    // }
-
-    // Generated segments (computed from boundaries)
-    segments: [],
-    // Example: [
-    //   {
-    //     id: 1,
-    //     text: 'The tragicall historie of Doctor Faustus',
-    //     startLine: 0,
-    //     endLine: 2,
-    //     lineCount: 2,
-    //     letterCount: 41,
-    //     isValid: true // 50-1000 letters
-    //   }
-    // ]
-
-    // Boundary array for segmentation
-    boundaries: [], // Array of line indices [0, 5, 10, 15, ..., totalLines]
-    // Example: [0, 2, 4, 6, 8, 10] for 2-line pairs
-    // First boundary is always 0, last is always total line count
-
-    // Segmentation configuration
-    segmentationMode: 'manual', // 'manual' | 'lines' | 'letters' | 'punctuation' | 'sentences' | 'balanced'
-    customSegmentSize: 5, // When mode is 'custom'
-
-    // Segmentation history for undo/redo
-    segmentationHistory: [],
-    segmentationHistoryIndex: -1,
-
-    // Selected segment for operations
-    selectedSegmentId: null,
-    hoveredLineIndex: null,
-
-    // Edition comparison mode
-    comparisonMode: false,
-    comparisonSources: [], // Array of source objects for side-by-side comparison
-  },
+workspace: {
+  activeSource: null,
+  currentSource: null,
+  segments: [],
+  boundaries: [],
+  segmentationMode: 'paragraph',
+  customSegmentSize: 20,
+  aiSegmentationResult: null,
+  aiSegmentAnalysis: null,
+  aiPrioritization: null,
+  multiEditionConfig: null,  // NEW
+},
 
   // ==================== ANALYZE STATE ====================
   analyze: {

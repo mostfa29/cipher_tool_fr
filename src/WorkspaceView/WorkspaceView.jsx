@@ -1,525 +1,542 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+// components/WorkspaceView.jsx
+
+import React, { useState, useCallback, useEffect, useMemo } from 'react';
 import { useAppState, ACTIONS } from '../context/AppContext';
+import SourcePicker from './SourcePicker';
+import EnhancedSegmentationTool from './EnhancedSegmentationTool';
 import { 
-  FileText, 
-  Scissors, 
+  RefreshCw, 
   Save, 
-  Play, 
-  ChevronDown,
-  ChevronUp,
+  Target, 
+  AlertCircle, 
+  CheckCircle, 
+  BookOpen,
+  Layers,
+  FileText,
+  ArrowLeft,
   Settings,
-  Grid3x3,
-  Type,
-  List,
-  Check,
-  X,
-  AlertCircle,
-  Loader,
-  Eye,
-  EyeOff,
-  Undo,
-  RefreshCw
+  Info,
+  Zap,
+  Download,
+  Upload,
+  GitCompare,
+  Calendar,
+  TrendingUp
 } from 'lucide-react';
 
-// ==================== CONSTANTS ====================
-const SEGMENTATION_MODES = [
-  { 
-    value: 'paragraph', 
-    label: 'Paragraphs', 
-    icon: Type,
-    description: 'Split by blank lines (most common)'
-  },
-  { 
-    value: 'fixed_length', 
-    label: 'Fixed Length', 
-    icon: Grid3x3,
-    description: 'Equal-sized segments'
-  },
-  { 
-    value: 'two_line_pairs', 
-    label: 'Line Pairs', 
-    icon: List,
-    description: 'Every 2 lines'
-  },
-  { 
-    value: 'title', 
-    label: 'Titles Only', 
-    icon: Type,
-    description: 'Uppercase or short lines'
-  }
-];
+// ============================================================================
+// WORKSPACE HEADER COMPONENT
+// ============================================================================
 
-// ==================== SUB-COMPONENTS ====================
-
-const WorkspaceHeader = ({ workTitle, hasUnsavedChanges, onSave, onAnalyze, isSaving }) => (
-  <div className="bg-white border-b border-gray-200 px-6 py-4">
-    <div className="flex items-center justify-between">
-      <div className="flex items-center gap-3">
-        <FileText className="w-6 h-6 text-blue-600" />
-        <div>
-          <h1 className="text-xl font-bold text-gray-900">{workTitle}</h1>
-          <p className="text-sm text-gray-500">Workspace - Segment & Analyze</p>
+const WorkspaceHeader = ({ 
+  activeSource, 
+  hasUnsavedChanges, 
+  onChangeText, 
+  hasSavedSegments,
+  segmentCount,
+  onNavigate,
+  isMultiEdition,
+  editionCount
+}) => {
+  if (!activeSource) {
+    return (
+      <div className="bg-white rounded-2xl shadow-lg border-2 border-gray-200 p-6">
+        <div className="flex items-center gap-4">
+          <div className="w-12 h-12 bg-gradient-to-br from-blue-500 to-indigo-500 rounded-xl flex items-center justify-center">
+            <FileText className="w-6 h-6 text-white" />
+          </div>
+          <div>
+            <h2 className="text-2xl font-bold text-gray-900">Workspace</h2>
+            <p className="text-sm text-gray-600 mt-1">
+              Select a text to begin segmentation and analysis
+            </p>
+          </div>
         </div>
-        {hasUnsavedChanges && (
-          <span className="px-2 py-1 bg-yellow-100 text-yellow-800 text-xs font-medium rounded">
-            Unsaved Changes
-          </span>
-        )}
       </div>
-      
-      <div className="flex items-center gap-2">
-        <button
-          onClick={onSave}
-          disabled={!hasUnsavedChanges || isSaving}
-          className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium transition-colors ${
-            hasUnsavedChanges && !isSaving
-              ? 'bg-blue-600 text-white hover:bg-blue-700'
-              : 'bg-gray-100 text-gray-400 cursor-not-allowed'
-          }`}
-        >
-          {isSaving ? <Loader className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-          Save Segments
-        </button>
-        
-        <button
-          onClick={onAnalyze}
-          className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg font-medium hover:bg-green-700 transition-colors"
-        >
-          <Play className="w-4 h-4" />
-          Analyze
-        </button>
+    );
+  }
+
+  return (
+    <div className="bg-white rounded-2xl shadow-lg border-2 border-gray-200 p-6">
+      <div className="flex items-center justify-between flex-wrap gap-4">
+        <div className="flex items-center gap-4">
+          <div className="w-12 h-12 bg-gradient-to-br from-blue-500 to-indigo-500 rounded-xl flex items-center justify-center">
+            {isMultiEdition ? (
+              <GitCompare className="w-6 h-6 text-white" />
+            ) : (
+              <FileText className="w-6 h-6 text-white" />
+            )}
+          </div>
+          
+          <div>
+            <h2 className="text-2xl font-bold text-gray-900">
+              {activeSource.title}
+            </h2>
+            <div className="flex items-center gap-4 text-sm text-gray-600 mt-1">
+              <span className="flex items-center gap-1">
+                <BookOpen className="w-4 h-4" />
+                {activeSource.author}
+              </span>
+              <span>•</span>
+              {isMultiEdition ? (
+                <span className="flex items-center gap-1">
+                  <GitCompare className="w-4 h-4" />
+                  {editionCount} edition{editionCount !== 1 ? 's' : ''}
+                </span>
+              ) : (
+                <span className="flex items-center gap-1">
+                  <FileText className="w-4 h-4" />
+                  {activeSource.line_count?.toLocaleString()} lines
+                </span>
+              )}
+            </div>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-3">
+          {/* Segment Count Badge */}
+          {segmentCount > 0 && (
+            <div className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl border-2 border-blue-200">
+              <Layers className="w-4 h-4 text-blue-600" />
+              <span className="font-bold text-lg text-blue-900">{segmentCount}</span>
+              <span className="text-sm text-blue-700 font-medium">segments</span>
+            </div>
+          )}
+
+          {/* Status Badge */}
+          {hasUnsavedChanges && segmentCount > 0 && (
+            <div className="flex items-center gap-2 px-4 py-2 bg-amber-50 rounded-xl border-2 border-amber-200">
+              <AlertCircle className="w-4 h-4 text-amber-600" />
+              <span className="text-sm font-semibold text-amber-900">Unsaved</span>
+            </div>
+          )}
+          
+          {hasSavedSegments && !hasUnsavedChanges && (
+            <div className="flex items-center gap-2 px-4 py-2 bg-green-50 rounded-xl border-2 border-green-200">
+              <CheckCircle className="w-4 h-4 text-green-600" />
+              <span className="text-sm font-semibold text-green-900">Saved</span>
+            </div>
+          )}
+
+          {/* Change Text Button */}
+          <button
+            onClick={onChangeText}
+            className="flex items-center gap-2 px-4 py-3 text-sm font-semibold text-gray-700 bg-white border-2 border-gray-300 rounded-xl hover:bg-gray-50 hover:border-gray-400 transition-all"
+            title="Change source text"
+          >
+            <RefreshCw className="w-4 h-4" />
+            Change Text
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// ============================================================================
+// EMPTY STATE COMPONENT
+// ============================================================================
+
+const EmptyWorkspaceState = ({ onSourceSelect }) => {
+  return (
+    <div className="min-h-[600px] flex items-center justify-center">
+      <div className="max-w-5xl w-full">
+        <div className="text-center mb-8">
+          <div className="inline-flex items-center justify-center w-20 h-20 bg-gradient-to-br from-blue-500 to-indigo-500 rounded-2xl mb-6">
+            <FileText className="w-10 h-10 text-white" />
+          </div>
+          <h2 className="text-3xl font-bold text-gray-900 mb-3">
+            Welcome to Segmentation Workspace
+          </h2>
+          <p className="text-lg text-gray-600 max-w-2xl mx-auto">
+            Select a text from your corpus library or upload your own to begin creating segments for cipher analysis
+          </p>
+        </div>
+
+        <SourcePicker 
+          onSourceSelect={onSourceSelect}
+          selectedSourceId={null}
+        />
+
+        {/* Feature Highlights */}
+        <div className="mt-12 grid grid-cols-1 md:grid-cols-3 gap-6">
+          <FeatureCard
+            icon={<Layers className="w-6 h-6 text-blue-600" />}
+            title="Multi-Edition Support"
+            description="Analyze multiple editions simultaneously to track cipher evolution"
+          />
+          <FeatureCard
+            icon={<Zap className="w-6 h-6 text-purple-600" />}
+            title="Smart Segmentation"
+            description="AI-powered algorithms detect natural breaks and semantic boundaries"
+          />
+          <FeatureCard
+            icon={<Target className="w-6 h-6 text-green-600" />}
+            title="Nested Segments"
+            description="Create hierarchical annotations for complex multi-layer ciphers"
+          />
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const FeatureCard = ({ icon, title, description }) => (
+  <div className="p-6 bg-white rounded-xl border-2 border-gray-200 hover:border-blue-300 hover:shadow-md transition-all">
+    <div className="flex items-start gap-4">
+      <div className="flex-shrink-0 w-12 h-12 bg-gradient-to-br from-gray-50 to-gray-100 rounded-lg flex items-center justify-center">
+        {icon}
+      </div>
+      <div>
+        <h3 className="font-bold text-gray-900 mb-2">{title}</h3>
+        <p className="text-sm text-gray-600">{description}</p>
       </div>
     </div>
   </div>
 );
 
-const SegmentationControls = ({ 
-  mode, 
-  segmentSize, 
-  onModeChange, 
-  onSizeChange, 
-  onAutoSegment,
-  segmentCount,
-  isProcessing 
-}) => {
-  const [isExpanded, setIsExpanded] = useState(true);
-  
-  return (
-    <div className="bg-white border-b border-gray-200">
-      <button
-        onClick={() => setIsExpanded(!isExpanded)}
-        className="w-full px-6 py-3 flex items-center justify-between hover:bg-gray-50 transition-colors"
-      >
-        <div className="flex items-center gap-2">
-          <Scissors className="w-5 h-5 text-gray-600" />
-          <span className="font-medium text-gray-900">Segmentation Controls</span>
-          {segmentCount > 0 && (
-            <span className="px-2 py-1 bg-blue-100 text-blue-800 text-xs font-medium rounded">
-              {segmentCount} segments
-            </span>
-          )}
-        </div>
-        {isExpanded ? <ChevronUp className="w-5 h-5" /> : <ChevronDown className="w-5 h-5" />}
-      </button>
-      
-      {isExpanded && (
-        <div className="px-6 pb-4 pt-2">
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-            {SEGMENTATION_MODES.map(({ value, label, icon: Icon, description }) => (
-              <button
-                key={value}
-                onClick={() => onModeChange(value)}
-                className={`p-4 rounded-lg border-2 transition-all text-left ${
-                  mode === value
-                    ? 'border-blue-500 bg-blue-50'
-                    : 'border-gray-200 hover:border-gray-300 bg-white'
-                }`}
-              >
-                <div className="flex items-start gap-3">
-                  <Icon className={`w-5 h-5 flex-shrink-0 ${
-                    mode === value ? 'text-blue-600' : 'text-gray-400'
-                  }`} />
-                  <div className="flex-1 min-w-0">
-                    <div className="font-medium text-gray-900 mb-1">{label}</div>
-                    <div className="text-xs text-gray-600">{description}</div>
-                  </div>
-                  {mode === value && (
-                    <Check className="w-5 h-5 text-blue-600 flex-shrink-0" />
-                  )}
-                </div>
-              </button>
-            ))}
-          </div>
-          
-          {mode === 'fixed_length' && (
-            <div className="mt-4 p-4 bg-gray-50 rounded-lg">
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Lines per segment
-              </label>
-              <div className="flex items-center gap-4">
-                <input
-                  type="range"
-                  min="5"
-                  max="50"
-                  value={segmentSize}
-                  onChange={(e) => onSizeChange(parseInt(e.target.value))}
-                  className="flex-1"
-                />
-                <input
-                  type="number"
-                  min="5"
-                  max="50"
-                  value={segmentSize}
-                  onChange={(e) => onSizeChange(parseInt(e.target.value))}
-                  className="w-20 px-3 py-2 border border-gray-300 rounded-lg text-center"
-                />
-              </div>
-            </div>
-          )}
-          
-          <div className="mt-4 flex items-center gap-3">
-            <button
-              onClick={onAutoSegment}
-              disabled={isProcessing}
-              className="flex items-center gap-2 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
-            >
-              {isProcessing ? (
-                <Loader className="w-4 h-4 animate-spin" />
-              ) : (
-                <RefreshCw className="w-4 h-4" />
-              )}
-              Auto-Segment
-            </button>
-            
-            <div className="text-sm text-gray-600">
-              Click to automatically create segments using {SEGMENTATION_MODES.find(m => m.value === mode)?.label.toLowerCase()}
-            </div>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-};
+// ============================================================================
+// QUICK START WIZARD (Optional helper for first-time users)
+// ============================================================================
 
-const SegmentPreview = ({ segments, onToggleBoundary, showPreview }) => {
-  const [isExpanded, setIsExpanded] = useState(true);
-  
-  if (!showPreview || segments.length === 0) return null;
-  
-  return (
-    <div className="bg-white border-b border-gray-200">
-      <button
-        onClick={() => setIsExpanded(!isExpanded)}
-        className="w-full px-6 py-3 flex items-center justify-between hover:bg-gray-50 transition-colors"
-      >
-        <div className="flex items-center gap-2">
-          <Eye className="w-5 h-5 text-gray-600" />
-          <span className="font-medium text-gray-900">Segment Preview</span>
-          <span className="text-sm text-gray-500">({segments.length} segments)</span>
-        </div>
-        {isExpanded ? <ChevronUp className="w-5 h-5" /> : <ChevronDown className="w-5 h-5" />}
-      </button>
-      
-      {isExpanded && (
-        <div className="px-6 pb-4 pt-2 max-h-96 overflow-y-auto">
-          <div className="space-y-2">
-            {segments.map((segment, index) => (
-              <div
-                key={segment.id}
-                className="p-3 bg-gray-50 rounded-lg border border-gray-200 hover:border-gray-300 transition-colors"
-              >
-                <div className="flex items-start justify-between mb-2">
-                  <div className="flex items-center gap-2">
-                    <span className="px-2 py-1 bg-blue-100 text-blue-800 text-xs font-medium rounded">
-                      #{index + 1}
-                    </span>
-                    <span className="text-sm font-medium text-gray-900">
-                      Lines {segment.start_line + 1}–{segment.end_line + 1}
-                    </span>
-                    <span className="text-xs text-gray-500">
-                      ({segment.text.length} chars)
-                    </span>
-                  </div>
-                </div>
-                <div className="text-sm text-gray-600 line-clamp-2">
-                  {segment.text}
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-    </div>
-  );
-};
+const QuickStartWizard = ({ onDismiss, onSelectMode }) => {
+  const [showWizard, setShowWizard] = useState(() => {
+    // Check if user has seen wizard before
+    const hasSeenWizard = localStorage.getItem('merlin_workspace_wizard_seen');
+    return !hasSeenWizard;
+  });
 
-const TextViewer = ({ lines, boundaries, onToggleBoundary, mode }) => {
-  const [showLineNumbers, setShowLineNumbers] = useState(true);
-  
-  const isSegmentBoundary = useCallback((lineIndex) => {
-    return boundaries.includes(lineIndex);
-  }, [boundaries]);
-  
-  const canToggleBoundary = useCallback((lineIndex) => {
-    return lineIndex !== 0 && lineIndex !== lines.length;
-  }, [lines.length]);
-  
+  const handleDismiss = useCallback(() => {
+    localStorage.setItem('merlin_workspace_wizard_seen', 'true');
+    setShowWizard(false);
+    onDismiss?.();
+  }, [onDismiss]);
+
+  if (!showWizard) return null;
+
   return (
-    <div className="flex-1 flex flex-col bg-white">
-      <div className="px-6 py-3 border-b border-gray-200 flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <FileText className="w-5 h-5 text-gray-600" />
-          <span className="font-medium text-gray-900">Text Editor</span>
-          <span className="text-sm text-gray-500">({lines.length} lines)</span>
+    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-6">
+      <div className="bg-white rounded-2xl shadow-2xl max-w-3xl w-full p-8">
+        <div className="text-center mb-8">
+          <div className="inline-flex items-center justify-center w-16 h-16 bg-gradient-to-br from-blue-500 to-indigo-500 rounded-2xl mb-4">
+            <Zap className="w-8 h-8 text-white" />
+          </div>
+          <h2 className="text-3xl font-bold text-gray-900 mb-3">
+            Welcome to the Segmentation Workspace!
+          </h2>
+          <p className="text-lg text-gray-600">
+            Choose your workflow to get started
+          </p>
         </div>
-        
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-8">
+          <WorkflowCard
+            icon={<BookOpen className="w-8 h-8 text-blue-600" />}
+            title="Single Edition"
+            description="Analyze one edition of a work with manual or automatic segmentation"
+            onClick={() => {
+              onSelectMode?.('single');
+              handleDismiss();
+            }}
+          />
+          <WorkflowCard
+            icon={<GitCompare className="w-8 h-8 text-purple-600" />}
+            title="Multi-Edition"
+            description="Compare multiple editions to track cipher evolution and spoilage"
+            recommended
+            onClick={() => {
+              onSelectMode?.('multi');
+              handleDismiss();
+            }}
+          />
+        </div>
+
         <button
-          onClick={() => setShowLineNumbers(!showLineNumbers)}
-          className="flex items-center gap-2 px-3 py-1 text-sm text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
+          onClick={handleDismiss}
+          className="w-full px-6 py-3 text-sm font-semibold text-gray-700 bg-gray-100 rounded-xl hover:bg-gray-200 transition-all"
         >
-          {showLineNumbers ? <Eye className="w-4 h-4" /> : <EyeOff className="w-4 h-4" />}
-          {showLineNumbers ? 'Hide' : 'Show'} Line Numbers
+          Skip Tutorial
         </button>
       </div>
-      
-      <div className="flex-1 overflow-y-auto px-6 py-4">
-        <div className="space-y-0">
-          {lines.map((line, index) => {
-            const isBoundary = isSegmentBoundary(index);
-            const isClickable = canToggleBoundary(index);
-            
-            return (
-              <div key={index} className="relative group">
-                {isBoundary && index !== 0 && (
-                  <div className="absolute inset-x-0 -top-2 h-4 flex items-center">
-                    <div className="flex-1 border-t-2 border-blue-500" />
-                    <button
-                      onClick={() => onToggleBoundary(index)}
-                      className="px-2 py-0.5 bg-blue-500 text-white text-xs font-medium rounded hover:bg-blue-600 transition-colors"
-                    >
-                      Remove Break
-                    </button>
-                    <div className="flex-1 border-t-2 border-blue-500" />
-                  </div>
-                )}
-                
-                <div
-                  onClick={isClickable ? () => onToggleBoundary(index) : undefined}
-                  className={`flex items-start gap-3 py-1 px-2 rounded ${
-                    isBoundary ? 'mt-4' : ''
-                  } ${
-                    isClickable 
-                      ? 'cursor-pointer hover:bg-blue-50 transition-colors' 
-                      : ''
-                  }`}
-                >
-                  {showLineNumbers && (
-                    <span className="flex-shrink-0 w-12 text-right text-xs text-gray-400 select-none">
-                      {index + 1}
-                    </span>
-                  )}
-                  
-                  <span className="flex-1 text-sm text-gray-800 font-mono leading-relaxed">
-                    {line || '\u00A0'}
-                  </span>
-                  
-                  {isClickable && (
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onToggleBoundary(index);
-                      }}
-                      className="opacity-0 group-hover:opacity-100 flex-shrink-0 px-2 py-0.5 bg-gray-200 text-gray-700 text-xs font-medium rounded hover:bg-gray-300 transition-all"
-                    >
-                      {isBoundary ? 'Remove' : 'Add'} Break
-                    </button>
-                  )}
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      </div>
-      
-      <div className="px-6 py-3 border-t border-gray-200 bg-gray-50">
-        <div className="flex items-center gap-2 text-sm text-gray-600">
-          <AlertCircle className="w-4 h-4" />
-          <span>
-            Click between lines to add segment breaks. Click on blue lines to remove breaks.
-          </span>
-        </div>
-      </div>
     </div>
   );
 };
 
-// ==================== MAIN COMPONENT ====================
-const Workspace = () => {
-  const { state, dispatch, saveSegmentation, createAutoSegmentation, startAnalysis, addNotification } = useAppState();
+const WorkflowCard = ({ icon, title, description, recommended, onClick }) => (
+  <button
+    onClick={onClick}
+    className={`
+      p-6 rounded-xl border-2 text-left transition-all hover:scale-[1.02]
+      ${recommended 
+        ? 'border-purple-500 bg-gradient-to-br from-purple-50 to-pink-50 hover:border-purple-600' 
+        : 'border-gray-200 bg-white hover:border-blue-300'
+      }
+    `}
+  >
+    <div className="flex items-start gap-4 mb-4">
+      <div className="flex-shrink-0 w-14 h-14 bg-white rounded-xl flex items-center justify-center shadow-sm">
+        {icon}
+      </div>
+      <div className="flex-1">
+        <h3 className="font-bold text-gray-900 text-lg mb-1 flex items-center gap-2">
+          {title}
+          {recommended && (
+            <span className="px-2 py-0.5 bg-purple-600 text-white text-xs rounded-full font-bold">
+              RECOMMENDED
+            </span>
+          )}
+        </h3>
+        <p className="text-sm text-gray-600">{description}</p>
+      </div>
+    </div>
+  </button>
+);
+
+// ============================================================================
+// MAIN WORKSPACE VIEW COMPONENT
+// ============================================================================
+
+const WorkspaceView = () => {
+  const { state, dispatch, saveSegmentation, addNotification } = useAppState();
   const { workspace, ui } = state;
-  
-  const [isSaving, setIsSaving] = useState(false);
-  const [isAutoSegmenting, setIsAutoSegmenting] = useState(false);
-  const [localSegmentSize, setLocalSegmentSize] = useState(workspace.customSegmentSize || 20);
-  
-  // ==================== COMPUTED VALUES ====================
-  const currentSegments = useMemo(() => {
-    if (!workspace.boundaries || !workspace.currentSource?.lines) return [];
+  const { currentSource, segments, boundaries } = workspace;
+
+  // State for multi-edition mode detection
+  const [workflowMode, setWorkflowMode] = useState(null); // 'single' | 'multi'
+
+  // Calculate segment count (for multi-edition, sum across all editions)
+  const segmentCount = useMemo(() => {
+    if (!segments) return 0;
+    if (Array.isArray(segments)) return segments.length;
     
-    const { boundaries, currentSource } = workspace;
-    const segments = [];
-    
-    for (let i = 0; i < boundaries.length - 1; i++) {
-      const start = boundaries[i];
-      const end = boundaries[i + 1];
-      const segmentLines = currentSource.lines.slice(start, end);
-      
-      segments.push({
-        id: `segment_${start}_${end}`,
-        name: `Lines ${start + 1}-${end}`,
-        start_line: start,
-        end_line: end - 1,
-        text: segmentLines.join('\n'),
-        lines: segmentLines
-      });
+    // If segments is an object (multi-edition format)
+    if (typeof segments === 'object') {
+      return Object.values(segments).reduce((sum, editionSegments) => {
+        return sum + (Array.isArray(editionSegments) ? editionSegments.length : 0);
+      }, 0);
     }
     
-    return segments;
-  }, [workspace.boundaries, workspace.currentSource]);
-  
-  // ==================== HANDLERS ====================
-  const handleModeChange = useCallback((newMode) => {
-    dispatch({
-      type: ACTIONS.SET_SEGMENTATION_MODE,
-      payload: { mode: newMode, customSize: localSegmentSize }
-    });
-  }, [dispatch, localSegmentSize]);
-  
-  const handleSizeChange = useCallback((newSize) => {
-    setLocalSegmentSize(newSize);
-    dispatch({
-      type: ACTIONS.SET_SEGMENTATION_MODE,
-      payload: { mode: workspace.segmentationMode, customSize: newSize }
-    });
-  }, [dispatch, workspace.segmentationMode]);
-  
-  const handleAutoSegment = useCallback(async () => {
-    if (!workspace.currentSource) return;
+    return 0;
+  }, [segments]);
+
+  // FIXED: Detect if we're in multi-edition mode
+  const isMultiEdition = useMemo(() => {
+    // Check both edition_count (from backend) and editions array
+    const hasMultipleEditions = (currentSource?.edition_count || 0) > 1 || 
+                                (currentSource?.editions?.length || 0) > 1;
     
-    setIsAutoSegmenting(true);
+    return workflowMode === 'multi' || hasMultipleEditions;
+  }, [workflowMode, currentSource]);
+
+  // FIXED: Get edition count from multiple possible sources
+  const editionCount = useMemo(() => {
+    return currentSource?.edition_count || 
+           currentSource?.editions?.length || 
+           1;
+  }, [currentSource]);
+
+  // Handle source selection
+  const handleSourceSelect = useCallback(async (work) => {
+    // Check if this work has multiple editions available
+    // In real implementation, would query backend for available editions
+    // For now, treat as single edition
     
-    try {
-      await createAutoSegmentation(
-        workspace.segmentationMode,
-        localSegmentSize
-      );
-    } catch (error) {
-      console.error('Auto-segmentation failed:', error);
-    } finally {
-      setIsAutoSegmenting(false);
-    }
-  }, [workspace.currentSource, workspace.segmentationMode, localSegmentSize, createAutoSegmentation]);
-  
-  const handleToggleBoundary = useCallback((lineIndex) => {
     dispatch({
-      type: ACTIONS.TOGGLE_BOUNDARY,
-      payload: lineIndex
+      type: ACTIONS.ADD_NOTIFICATION,
+      payload: {
+        type: 'success',
+        message: `Loaded: ${work.title}`,
+        duration: 2000
+      }
     });
   }, [dispatch]);
-  
-  const handleSave = useCallback(async () => {
-    setIsSaving(true);
-    
-    try {
-      // Update segments before saving
-      dispatch({
-        type: ACTIONS.SET_SEGMENTS,
-        payload: currentSegments
-      });
-      
-      // Save to backend
-      await saveSegmentation();
-    } catch (error) {
-      console.error('Save failed:', error);
-    } finally {
-      setIsSaving(false);
+
+  // Handle changing source text
+  const handleChangeText = useCallback(() => {
+    if (ui.hasUnsavedChanges) {
+      if (!window.confirm('You have unsaved changes. Are you sure you want to change the source text?')) {
+        return;
+      }
     }
-  }, [dispatch, currentSegments, saveSegmentation]);
-  
-  const handleAnalyze = useCallback(async () => {
-    if (currentSegments.length === 0) {
-      addNotification('error', 'Please create segments before analyzing');
+    
+    dispatch({ type: ACTIONS.CLEAR_WORKSPACE });
+    setWorkflowMode(null);
+    
+    addNotification('info', 'Workspace cleared');
+  }, [ui.hasUnsavedChanges, dispatch, addNotification]);
+
+  // Handle navigation to analysis view
+  const handleNavigateToAnalysis = useCallback(() => {
+    if (segments?.length === 0) {
+      addNotification('warning', 'Create segments before analyzing');
       return;
     }
     
-    // Update segments in state
-    dispatch({
-      type: ACTIONS.SET_SEGMENTS,
-      payload: currentSegments
-    });
-    
-    // Start analysis
-    await startAnalysis();
-  }, [currentSegments, dispatch, startAnalysis, addNotification]);
-  
-  // ==================== EFFECTS ====================
-  useEffect(() => {
-    // Initialize boundaries if not set
-    if (workspace.currentSource?.lines && workspace.boundaries.length === 0) {
-      dispatch({
-        type: ACTIONS.SET_BOUNDARIES,
-        payload: [0, workspace.currentSource.lines.length]
-      });
+    if (ui.hasUnsavedChanges) {
+      addNotification('warning', 'Save segments before analyzing');
+      return;
     }
-  }, [workspace.currentSource, workspace.boundaries.length, dispatch]);
-  
-  // ==================== RENDER ====================
-  if (!workspace.currentSource) {
+    
+    dispatch({ type: ACTIONS.SET_ACTIVE_VIEW, payload: 'analyze' });
+  }, [segments, ui.hasUnsavedChanges, dispatch, addNotification]);
+
+  // Keyboard shortcuts
+  useEffect(() => {
+    const handleKeyPress = (e) => {
+      // Ctrl/Cmd + S to save
+      if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+        e.preventDefault();
+        if (currentSource && segments?.length > 0) {
+          saveSegmentation();
+        }
+      }
+      
+      // Ctrl/Cmd + Enter to analyze
+      if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+        e.preventDefault();
+        if (currentSource && segments?.length > 0 && !ui.hasUnsavedChanges) {
+          handleNavigateToAnalysis();
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyPress);
+    return () => window.removeEventListener('keydown', handleKeyPress);
+  }, [currentSource, segments, ui.hasUnsavedChanges, saveSegmentation, handleNavigateToAnalysis]);
+
+  // Show empty state if no source selected
+  if (!currentSource) {
     return (
-      <div className="flex-1 flex items-center justify-center bg-gray-50">
-        <div className="text-center">
-          <FileText className="w-16 h-16 text-gray-400 mx-auto mb-4" />
-          <h2 className="text-xl font-semibold text-gray-900 mb-2">No Work Loaded</h2>
-          <p className="text-gray-600">Select a work from the Library to begin</p>
+      <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50 p-6">
+        <div className="max-w-7xl mx-auto space-y-6">
+          <WorkspaceHeader 
+            activeSource={null}
+            hasUnsavedChanges={false}
+            onChangeText={handleChangeText}
+            hasSavedSegments={false}
+            segmentCount={0}
+            onNavigate={handleNavigateToAnalysis}
+            isMultiEdition={false}
+            editionCount={1}
+          />
+          
+          <EmptyWorkspaceState onSourceSelect={handleSourceSelect} />
+          
+          {/* Quick Start Wizard */}
+          <QuickStartWizard
+            onSelectMode={setWorkflowMode}
+            onDismiss={() => {}}
+          />
         </div>
       </div>
     );
   }
-  
+
+  // Show segmentation tool
   return (
-    <div className="flex-1 flex flex-col overflow-hidden">
-      <WorkspaceHeader
-        workTitle={workspace.currentSource.title}
-        hasUnsavedChanges={ui.hasUnsavedChanges}
-        onSave={handleSave}
-        onAnalyze={handleAnalyze}
-        isSaving={isSaving}
-      />
-      
-      <SegmentationControls
-        mode={workspace.segmentationMode}
-        segmentSize={localSegmentSize}
-        onModeChange={handleModeChange}
-        onSizeChange={handleSizeChange}
-        onAutoSegment={handleAutoSegment}
-        segmentCount={currentSegments.length}
-        isProcessing={isAutoSegmenting}
-      />
-      
-      <SegmentPreview
-        segments={currentSegments}
-        onToggleBoundary={handleToggleBoundary}
-        showPreview={currentSegments.length > 0}
-      />
-      
-      <TextViewer
-        lines={workspace.currentSource.lines}
-        boundaries={workspace.boundaries}
-        onToggleBoundary={handleToggleBoundary}
-        mode={workspace.segmentationMode}
-      />
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50 p-6">
+      <div className="max-w-[1920px] mx-auto space-y-6">
+        <WorkspaceHeader 
+          activeSource={currentSource}
+          hasUnsavedChanges={ui.hasUnsavedChanges}
+          onChangeText={handleChangeText}
+          hasSavedSegments={segments?.length > 0 && !ui.hasUnsavedChanges}
+          segmentCount={segmentCount}
+          onNavigate={handleNavigateToAnalysis}
+          isMultiEdition={isMultiEdition}
+          editionCount={editionCount}
+        />
+
+        {/* Keyboard Shortcuts Help */}
+        <KeyboardShortcutsHint />
+
+        {/* Enhanced Segmentation Tool */}
+        <EnhancedSegmentationTool
+          onBack={handleChangeText}
+          saveSegmentation={saveSegmentation}
+          hasUnsavedChanges={ui.hasUnsavedChanges}
+          onAnalyze={handleNavigateToAnalysis}
+        />
+      </div>
     </div>
   );
 };
 
-export default Workspace;
+// ============================================================================
+// KEYBOARD SHORTCUTS HINT
+// ============================================================================
+
+const KeyboardShortcutsHint = () => {
+  const [isExpanded, setIsExpanded] = useState(false);
+
+  return (
+    <div className="bg-blue-50 border-2 border-blue-200 rounded-xl overflow-hidden">
+      <button
+        onClick={() => setIsExpanded(!isExpanded)}
+        className="w-full px-6 py-3 flex items-center justify-between hover:bg-blue-100 transition-colors"
+      >
+        <div className="flex items-center gap-3">
+          <Info className="w-5 h-5 text-blue-600" />
+          <span className="text-sm font-semibold text-blue-900">
+            Keyboard Shortcuts
+          </span>
+        </div>
+        <span className="text-xs text-blue-700">
+          {isExpanded ? 'Hide' : 'Show'}
+        </span>
+      </button>
+      
+      {isExpanded && (
+        <div className="px-6 pb-4 grid grid-cols-1 md:grid-cols-3 gap-4">
+          <ShortcutItem 
+            keys={['Ctrl/Cmd', 'S']} 
+            description="Save segments" 
+          />
+          <ShortcutItem 
+            keys={['Ctrl/Cmd', 'Enter']} 
+            description="Start analysis" 
+          />
+          <ShortcutItem 
+            keys={['Esc']} 
+            description="Clear selection" 
+          />
+          <ShortcutItem 
+            keys={['Delete']} 
+            description="Delete selected segment" 
+          />
+          <ShortcutItem 
+            keys={['Drag']} 
+            description="Select text to annotate" 
+          />
+          <ShortcutItem 
+            keys={['Click']} 
+            description="Select/interact with segment" 
+          />
+        </div>
+      )}
+    </div>
+  );
+};
+
+const ShortcutItem = ({ keys, description }) => (
+  <div className="flex items-center gap-3">
+    <div className="flex items-center gap-1">
+      {keys.map((key, idx) => (
+        <React.Fragment key={idx}>
+          {idx > 0 && <span className="text-blue-600 text-xs mx-1">+</span>}
+          <kbd className="px-2 py-1 bg-white border border-blue-300 rounded text-xs font-mono text-blue-900 shadow-sm">
+            {key}
+          </kbd>
+        </React.Fragment>
+      ))}
+    </div>
+    <span className="text-xs text-blue-800">{description}</span>
+  </div>
+);
+
+// ============================================================================
+// EXPORTS
+// ============================================================================
+
+export default WorkspaceView;
+export { WorkspaceHeader, EmptyWorkspaceState, QuickStartWizard };
