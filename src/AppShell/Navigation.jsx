@@ -37,17 +37,12 @@ const Navigation = ({
     },
     {
       id: 'ai_chat',
-      label: 'AI Chat',
+      label: 'AI Assistant',
       description: 'Chat with AI about your decoded results',
       icon: '🤖',
       badge: resultCount > 0 ? '✨' : null,
     },
-    {
-      id: 'library',
-      label: 'Library',
-      description: 'Manage sources and saved sessions',
-      icon: '📚',
-    },
+
   ];
 
   const handleTabClick = (viewId) => {

@@ -1,6 +1,6 @@
 // context/AppContext.jsx
 
-import React, { createContext, useReducer, useEffect, useCallback, useContext } from 'react';
+import React, { createContext, useReducer, useEffect, useCallback, useContext, useRef } from 'react';
 import { INITIAL_STATE } from './initialState';
 import { loadFromStorage, saveToStorage } from '../utils/storage';
 
@@ -54,7 +54,7 @@ async request(endpoint, options = {}) {
   
   // ADD: Abort controller for timeout
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 120000); // 120 second timeout
+  const timeoutId = setTimeout(() => controller.abort(), 600000); // 120 second timeout
   
   try {
     const response = await fetch(url, {
@@ -118,12 +118,68 @@ async request(endpoint, options = {}) {
   }
 }
 
-// ============================================================================
-// THAT'S IT! This is the only change needed in frontend.
-// The real fix should be in backend to return job_id immediately.
-// ============================================================================
-// Add these methods to the APIClient class:
+  getAllResults() {
+    return this.request('/api/results/list');
+  }
 
+// In the APIClient class (around line 30-100), add this method:
+
+uploadResultToDrive(resultId) {
+  return this.request(`/api/results/${resultId}/upload-to-drive`, {
+    method: 'POST',
+  });
+}
+  autosaveSession(sessionId, tabState) {
+  return this.request(`/api/sessions/${sessionId}/autosave`, {
+    method: 'POST',
+    body: JSON.stringify({
+      tab_state: tabState
+    }),
+  });
+}
+
+  getResultDetails(resultId) {
+    return this.request(`/api/results/${resultId}`);
+  }
+
+  getLatestResult() {
+    return this.request('/api/results/latest');
+  }
+
+  deleteResult(resultId) {
+    return this.request(`/api/results/${resultId}`, {
+      method: 'DELETE',
+    });
+  }
+
+  // Session Management
+createSession(sessionData) {
+  return this.request('/api/sessions/create', {
+    method: 'POST',
+    body: JSON.stringify(sessionData),
+  });
+}
+
+listSessions() {
+  return this.request('/api/sessions/list');
+}
+
+getSession(sessionId) {
+  return this.request(`/api/sessions/${sessionId}`);
+}
+
+deleteSession(sessionId) {
+  return this.request(`/api/sessions/${sessionId}`, {
+    method: 'DELETE',
+  });
+}
+
+updateSession(sessionId, updates) {
+  return this.request(`/api/sessions/${sessionId}`, {
+    method: 'PUT',
+    body: JSON.stringify(updates),
+  });
+}
 // Advanced Analysis Endpoints
 calculateStatisticalImprobability(decodedText, segmentLength, cipherMethod) {
   return this.request('/api/analysis/statistical-improbability', {
@@ -315,13 +371,156 @@ enhanceWithAI(decodedText, mode = 'standard', maxSuggestions = 10) {
     }),
   });
 }
-
-chatWithAI(message, conversationHistory = []) {
+chatWithAI(message, conversationHistory = [], context = {}) {
   return this.request('/api/ai/chat', {
     method: 'POST',
     body: JSON.stringify({
       message: message,
-      conversation_history: conversationHistory
+      conversation_history: conversationHistory,
+      work_id: context.work_id,
+      author: context.author,
+      work_title: context.work_title,
+      current_results: context.current_results,
+      job_id: context.job_id,
+      command: context.command,
+      command_data: context.command_data
+    }),
+  });
+}
+
+// Enhanced AI Chat with full context
+
+
+// Enhance decoded text with AI
+enhanceDecodeWithAI(decodedText, mode = 'standard') {
+  return this.request('/api/ai/enhance', {
+    method: 'POST',
+    body: JSON.stringify({
+      decoded_text: decodedText,
+      mode: mode
+    }),
+  });
+}
+
+// AI letter arrangement suggestions
+suggestLetterArrangements(partialDecode, remainingLetters, targetEntities = [], maxSuggestions = 10) {
+  return this.request('/api/ai/suggest-letters', {
+    method: 'POST',
+    body: JSON.stringify({
+      partial_decode: partialDecode,
+      remaining_letters: remainingLetters,
+      target_entities: targetEntities,
+      max_suggestions: maxSuggestions,
+      aggressiveness: 0.5
+    }),
+  });
+}
+
+// Propose and evaluate research hypothesis
+proposeHypothesis(hypothesis, evidence, workId = null, author = null, confidence = 0.5) {
+  return this.request('/api/ai/propose-hypothesis', {
+    method: 'POST',
+    body: JSON.stringify({
+      hypothesis: hypothesis,
+      evidence: evidence,
+      work_id: workId,
+      author: author,
+      initial_confidence: confidence
+    }),
+  });
+}
+
+// Synthesize comprehensive research narrative
+synthesizeNarrative(workId, author, includeNetwork = true, includeTimeline = true) {
+  return this.request('/api/ai/synthesize-narrative', {
+    method: 'POST',
+    body: JSON.stringify({
+      work_id: workId,
+      author: author,
+      include_network: includeNetwork,
+      include_timeline: includeTimeline
+    }),
+  });
+}
+
+// AI-powered edition comparison
+compareEditionsWithAI(edition1Id, edition2Id, authorFolder, analysisMode = 'differential') {
+  return this.request('/api/ai/compare-editions', {
+    method: 'POST',
+    body: JSON.stringify({
+      edition1_id: edition1Id,
+      edition2_id: edition2Id,
+      author_folder: authorFolder,
+      analysis_mode: analysisMode
+    }),
+  });
+}
+
+// Build entity relationship network
+buildEntityNetwork(workId, author, includeClusters = true, minCooccurrence = 2) {
+  return this.request('/api/ai/build-entity-network', {
+    method: 'POST',
+    body: JSON.stringify({
+      work_id: workId,
+      author: author,
+      include_clusters: includeClusters,
+      min_cooccurrence: minCooccurrence
+    }),
+  });
+}
+
+// Export comprehensive research report
+exportResearchReport(workId, author, includeNarrative = true, includeNetwork = true, includeRawData = false, format = 'markdown') {
+  return this.request('/api/ai/export-report', {
+    method: 'POST',
+    body: JSON.stringify({
+      work_id: workId,
+      author: author,
+      include_narrative: includeNarrative,
+      include_network: includeNetwork,
+      include_raw_data: includeRawData,
+      format: format
+    }),
+  });
+}
+
+// Download research report
+downloadResearchReport(filename) {
+  return this.request(`/api/ai/download-report/${filename}`);
+}
+
+// Get AI model statistics
+getAIModelStats() {
+  return this.request('/api/ai/model-stats');
+}
+
+// Clear AI cache
+clearAICache() {
+  return this.request('/api/ai/clear-cache', {
+    method: 'POST',
+  });
+}
+
+// Deep AI analysis of specific segment
+analyzeSegmentWithAI(segmentId, segmentText, decodeResults, question = null) {
+  return this.request('/api/ai/analyze-segment', {
+    method: 'POST',
+    body: JSON.stringify({
+      segment_id: segmentId,
+      segment_text: segmentText,
+      decode_results: decodeResults,
+      question: question
+    }),
+  });
+}
+
+// Reconstruct gibberish text
+reconstructGibberish(gibberishText, maxReconstructions = 5) {
+  return this.request('/api/ai/reconstruct-gibberish', {
+    method: 'POST',
+    body: JSON.stringify({
+      gibberish_text: gibberishText,
+      max_reconstructions: maxReconstructions
     }),
   });
 }
@@ -345,10 +544,7 @@ validateJobResult(jobId) {
   return this.request(`/api/jobs/${jobId}/validate`);
 }
 
-downloadResults(jobId, format = 'json') {
-  const url = `${this.baseURL}/api/batch/export/${jobId}_export.${format}`;
-  window.open(url, '_blank');
-}
+
 
 healthCheck() {
   return this.request('/health');
@@ -437,8 +633,8 @@ getWorkContent(authorFolder, editionId, baseWorkId = null) {
   }
 
   downloadResults(jobId, format = 'json') {
-    const url = `${this.baseURL}/api/batch/export/${jobId}_export.${format}`;
-    window.open(url, '_blank');
+    const url = `${this.baseURL}/api/batch/export/${jobId}`;
+    // window.open(url, '_blank');
   }
 
   healthCheck() {
@@ -455,12 +651,25 @@ export const ACTIONS = {
   SET_SELECTED_AUTHOR: 'SET_SELECTED_AUTHOR',
   SET_AVAILABLE_WORKS: 'SET_AVAILABLE_WORKS',
   SET_SELECTED_WORK: 'SET_SELECTED_WORK',
+  SET_AI_CHAT_HISTORY: 'SET_AI_CHAT_HISTORY',
+  CLEAR_AI_CHAT_HISTORY: 'CLEAR_AI_CHAT_HISTORY',
+  SET_AI_ENHANCEMENT: 'SET_AI_ENHANCEMENT',
+  SET_LETTER_SUGGESTIONS: 'SET_LETTER_SUGGESTIONS',
+  SET_HYPOTHESIS_EVALUATION: 'SET_HYPOTHESIS_EVALUATION',
+  SET_RESEARCH_NARRATIVE: 'SET_RESEARCH_NARRATIVE',
+  SET_ENTITY_NETWORK: 'SET_ENTITY_NETWORK',
+  SET_AI_EDITION_COMPARISON: 'SET_AI_EDITION_COMPARISON',
+  SET_SEGMENT_AI_ANALYSIS: 'SET_SEGMENT_AI_ANALYSIS',
+  SET_AI_MODEL_STATS: 'SET_AI_MODEL_STATS',
+  SET_CURRENT_SESSION: 'SET_CURRENT_SESSION',
+UPDATE_SESSION_TAB_STATE: 'UPDATE_SESSION_TAB_STATE',
+CLEAR_CURRENT_SESSION: 'CLEAR_CURRENT_SESSION',
 
-    UPDATE_ANALYSIS_JOB: 'UPDATE_ANALYSIS_JOB',
+  UPDATE_ANALYSIS_JOB: 'UPDATE_ANALYSIS_JOB',
 
 
 
-    SET_MULTI_EDITION_CONFIG: 'SET_MULTI_EDITION_CONFIG',
+  SET_MULTI_EDITION_CONFIG: 'SET_MULTI_EDITION_CONFIG',
   CLEAR_MULTI_EDITION_CONFIG: 'CLEAR_MULTI_EDITION_CONFIG',
   
   // Workspace
@@ -537,7 +746,204 @@ function appReducer(state, action) {
           authors: action.payload,
         },
       };
+      case ACTIONS.SET_CURRENT_SESSION:
+  return {
+    ...state,
+    session: {
+      ...state.session,
+      current: action.payload,
+      isActive: true
+    }
+  };
 
+case ACTIONS.UPDATE_SESSION_TAB_STATE:
+  return {
+    ...state,
+    session: {
+      ...state.session,
+      tabStates: {
+        ...state.session.tabStates,
+        [action.payload.tab]: action.payload.state
+      }
+    }
+  };
+
+case ACTIONS.CLEAR_CURRENT_SESSION:
+  return {
+    ...state,
+    session: INITIAL_STATE.session
+  };
+        case ACTIONS.SET_AI_CHAT_HISTORY:
+      return {
+        ...state,
+        analyze: {
+          ...state.analyze,
+          aiChatHistory: action.payload,
+        },
+      };
+    
+    case ACTIONS.CLEAR_AI_CHAT_HISTORY:
+      return {
+        ...state,
+        analyze: {
+          ...state.analyze,
+          aiChatHistory: [],
+        },
+      };
+    
+    case ACTIONS.SET_AI_ENHANCEMENT:
+      return {
+        ...state,
+        results: {
+          ...state.results,
+          aiEnhancement: action.payload,
+        },
+      };
+    
+    case ACTIONS.SET_LETTER_SUGGESTIONS:
+      return {
+        ...state,
+        analyze: {
+          ...state.analyze,
+          letterSuggestions: action.payload,
+        },
+      };
+    
+    case ACTIONS.SET_HYPOTHESIS_EVALUATION:
+      return {
+        ...state,
+        results: {
+          ...state.results,
+          hypothesisEvaluation: action.payload,
+        },
+      };
+    
+    case ACTIONS.SET_RESEARCH_NARRATIVE:
+      return {
+        ...state,
+        results: {
+          ...state.results,
+          researchNarrative: action.payload,
+        },
+      };
+    
+    case ACTIONS.SET_ENTITY_NETWORK:
+      return {
+        ...state,
+        results: {
+          ...state.results,
+          entityNetwork: action.payload,
+        },
+      };
+    
+    case ACTIONS.SET_AI_EDITION_COMPARISON:
+      return {
+        ...state,
+        results: {
+          ...state.results,
+          aiEditionComparison: action.payload,
+        },
+      };
+    
+    case ACTIONS.SET_SEGMENT_AI_ANALYSIS:
+      return {
+        ...state,
+        results: {
+          ...state.results,
+          segmentAIAnalysis: action.payload,
+        },
+      };
+    
+    case ACTIONS.SET_AI_MODEL_STATS:
+      return {
+        ...state,
+        ui: {
+          ...state.ui,
+          aiModelStats: action.payload,
+        },
+      };
+
+    
+    case ACTIONS.CLEAR_AI_CHAT_HISTORY:
+      return {
+        ...state,
+        analyze: {
+          ...state.analyze,
+          aiChatHistory: [],
+        },
+      };
+    
+    case ACTIONS.SET_AI_ENHANCEMENT:
+      return {
+        ...state,
+        results: {
+          ...state.results,
+          aiEnhancement: action.payload,
+        },
+      };
+    
+    case ACTIONS.SET_LETTER_SUGGESTIONS:
+      return {
+        ...state,
+        analyze: {
+          ...state.analyze,
+          letterSuggestions: action.payload,
+        },
+      };
+    
+    case ACTIONS.SET_HYPOTHESIS_EVALUATION:
+      return {
+        ...state,
+        results: {
+          ...state.results,
+          hypothesisEvaluation: action.payload,
+        },
+      };
+    
+    case ACTIONS.SET_RESEARCH_NARRATIVE:
+      return {
+        ...state,
+        results: {
+          ...state.results,
+          researchNarrative: action.payload,
+        },
+      };
+    
+    case ACTIONS.SET_ENTITY_NETWORK:
+      return {
+        ...state,
+        results: {
+          ...state.results,
+          entityNetwork: action.payload,
+        },
+      };
+    
+    case ACTIONS.SET_AI_EDITION_COMPARISON:
+      return {
+        ...state,
+        results: {
+          ...state.results,
+          aiEditionComparison: action.payload,
+        },
+      };
+    
+    case ACTIONS.SET_SEGMENT_AI_ANALYSIS:
+      return {
+        ...state,
+        results: {
+          ...state.results,
+          segmentAIAnalysis: action.payload,
+        },
+      };
+    
+    case ACTIONS.SET_AI_MODEL_STATS:
+      return {
+        ...state,
+        ui: {
+          ...state.ui,
+          aiModelStats: action.payload,
+        },
+      };
     case ACTIONS.UPDATE_ANALYSIS_JOB:
   return {
     ...state,
@@ -1091,7 +1497,393 @@ export function AppProvider({ children }) {
       payload: { type, message, ...options },
     });
   }, []);
+
+  // In AppProvider component (around line 800), add this callback:
+
+const uploadResultToDrive = useCallback(async (resultId) => {
+  try {
+    console.log('📤 Auto-uploading result to Drive:', resultId);
+    
+    const result = await api.uploadResultToDrive(resultId);
+    
+    if (result.status === 'already_uploaded') {
+      console.log('✅ Result already in Drive:', result.drive_upload.file_id);
+      addNotification('info', 'Result already uploaded to Drive', {
+        duration: 2000
+      });
+    } else if (result.status === 'uploaded') {
+      console.log('✅ Uploaded to Drive:', result.drive_upload.file_id);
+      addNotification('success', 'Result uploaded to Google Drive', {
+        duration: 3000
+      });
+    } else {
+      console.warn('⚠️  Upload failed but file is saved locally');
+      addNotification('warning', 'Drive upload failed, but file saved locally', {
+        duration: 3000
+      });
+    }
+    
+    return result;
+  } catch (error) {
+    console.error('❌ Drive upload error:', error);
+    // Don't show error notification - upload is optional
+    return null;
+  }
+}, [addNotification, api]);
+
+const listSessions = useCallback(async () => {
+  dispatch({ type: ACTIONS.SET_LOADING, payload: { key: 'sessions', value: true } });
+  
+  try {
+    const response = await api.listSessions();
+    console.log(`📋 Loaded ${response.sessions.length} sessions`);
+    return response.sessions;  // ← RETURN response.sessions, not response
+  } catch (error) {
+    addNotification('error', 'Failed to load sessions: ' + error.message);
+    throw error;
+  } finally {
+    dispatch({ type: ACTIONS.SET_LOADING, payload: { key: 'sessions', value: false } });
+  }
+}, [addNotification, api, dispatch]);
+
+const deleteSession = useCallback(async (sessionId) => {
+  try {
+    await api.deleteSession(sessionId);
+    addNotification('success', 'Session deleted');
+  } catch (error) {
+    addNotification('error', 'Failed to delete session: ' + error.message);
+    throw error;
+  }
+}, [addNotification, api]);
   // Advanced Analysis Functions
+// Auto-save debouncer
+const autoSaveTimerRef = useRef(null);
+
+const autoSaveSession = useCallback(async (tabState) => {
+  const currentSession = state.session?.current;
+  if (!currentSession || !state.session?.autoSaveEnabled) return;
+  
+  // Debounce auto-saves
+  if (autoSaveTimerRef.current) {
+    clearTimeout(autoSaveTimerRef.current);
+  }
+  
+  autoSaveTimerRef.current = setTimeout(async () => {
+    try {
+      await api.autosaveSession(currentSession.session_id, tabState);
+      console.log('✅ Auto-saved session');
+    } catch (error) {
+      console.error('Auto-save failed:', error);
+    }
+  }, 2000); // Save after 2 seconds of inactivity
+}, [state.session, api]);
+
+const createSession = useCallback(async (name, notes = '', sessionData = {}) => {
+  const currentWork = sessionData.work || state.workspace?.currentSource;
+  const currentSegments = sessionData.work?.segments || state.workspace?.segments || [];
+  
+  if (!currentWork) {
+    addNotification('error', 'No work loaded');
+    return null;
+  }
+  
+  // Load selected results
+  let selectedPatterns = [];
+  
+  if (sessionData.selectedResults && sessionData.selectedResults.length > 0) {
+    for (const resultId of sessionData.selectedResults) {
+      try {
+        if (resultId === 'current') {
+          // Use current loaded results
+          selectedPatterns = state.results?.patterns || [];
+        } else {
+          // Load result from API
+          const result = await api.getResultDetails(resultId);
+          
+          // Transform based on type
+          if (result.is_multi_edition) {
+            const allPatterns = [];
+            for (const [editionId, editionData] of Object.entries(result.editions || {})) {
+              if (!editionData.error) {
+                const editionPatterns = transformEditionToPatterns(editionData, result);
+                allPatterns.push(...editionPatterns);
+              }
+            }
+            selectedPatterns.push(...allPatterns);
+          } else {
+            const patterns = transformResultsToPatterns(result);
+            selectedPatterns.push(...patterns);
+          }
+        }
+      } catch (error) {
+        console.error(`Failed to load result ${resultId}:`, error);
+      }
+    }
+  }
+  
+  try {
+    const result = await api.createSession({
+      name,
+      work_id: currentWork.id,
+      work_title: currentWork.title,
+      author: currentWork.author,
+      author_folder: currentWork.author_folder,
+      result_id: state.results.lastJobId,
+      segments: currentSegments,
+      selected_patterns: selectedPatterns.map(p => p.id),
+      
+      // Save all tab states
+      chat_messages: state.session.tabStates.chat.messages || [],
+      hypothesis_state: state.session.tabStates.hypothesis || null,
+      narrative_state: state.session.tabStates.narrative || null,
+      edition_comparison_state: state.session.tabStates.compare || null,
+      segment_analysis_state: state.session.tabStates.segment || null,
+      report_config: state.session.tabStates.report?.config || null,
+      
+      hypotheses: [],
+      entity_network: null,
+      last_tab: state.session.lastTab || 'chat',
+      notes,
+      
+      // NEW: Store selected results metadata
+      selected_results_metadata: sessionData.selectedResults || []
+    });
+    
+    // Set as current session
+    dispatch({
+      type: ACTIONS.SET_CURRENT_SESSION,
+      payload: {
+        ...result.session,
+        loaded_patterns: selectedPatterns  // Store patterns in memory
+      }
+    });
+    
+    addNotification('success', `Session created: ${name} (${selectedPatterns.length} patterns)`);
+    return result.session;
+  } catch (error) {
+    addNotification('error', 'Failed to create session: ' + error.message);
+    throw error;
+  }
+}, [state, addNotification, api, dispatch]);
+
+// Update the loadWork function to properly handle edition_count:
+
+const loadWork = useCallback(async (authorFolder, workId, selectedEdition = null) => {
+  dispatch({ type: ACTIONS.SET_LOADING, payload: { key: 'work', value: true } });
+  
+  try {
+    // Determine which edition to load
+    const editionToLoad = selectedEdition?.id || workId;
+    
+    console.log(`📖 Loading work: ${workId}${selectedEdition ? ` (Edition: ${selectedEdition.date})` : ''}`);
+    
+    // Load the edition content
+    const content = await api.getWorkContent(authorFolder, editionToLoad);
+    console.log(`✅ Loaded work: ${content.title} (${content.line_count} lines)`);
+    
+    // Get the original work from availableWorks to preserve edition_count
+    const originalWork = state.library.availableWorks.find(w => w.id === workId);
+    
+    // Cancel any running analysis
+    dispatch({ type: ACTIONS.CANCEL_ANALYSIS });
+    
+    // Set active source with edition metadata AND edition_count preserved
+    dispatch({ 
+      type: ACTIONS.SET_ACTIVE_SOURCE, 
+      payload: {
+        ...content,
+        author_folder: authorFolder,
+        base_work_id: workId, // Store the base work ID (primary edition ID)
+        edition_count: originalWork?.edition_count || 1,  // ← PRESERVE THIS!
+        selected_edition: selectedEdition || {
+          id: editionToLoad,
+          date: content.date,
+          isPrimary: editionToLoad === workId
+        }
+      }
+    });
+    
+    // Try to load saved segmentation for THIS SPECIFIC EDITION
+    try {
+      const segmentation = await api.getSegmentation(editionToLoad);
+      if (segmentation?.segments?.length > 0) {
+        console.log(`✅ Loaded saved segmentation: ${segmentation.segments.length} segments for edition ${editionToLoad}`);
+        
+        const boundaries = [0];
+        segmentation.segments.forEach(seg => {
+          boundaries.push(seg.end_line + 1);
+        });
+        
+        if (boundaries[boundaries.length - 1] !== content.lines.length) {
+          boundaries.push(content.lines.length);
+        }
+        
+        dispatch({ 
+          type: ACTIONS.LOAD_SAVED_SEGMENTATION, 
+          payload: {
+            segments: segmentation.segments,
+            boundaries: boundaries
+          }
+        });
+        
+        const editionLabel = selectedEdition ? ` for ${selectedEdition.date} edition` : '';
+        addNotification('info', `Loaded ${segmentation.segments.length} segments${editionLabel}`);
+      }
+    } catch (err) {
+      console.log(`ℹ️  No saved segmentation found for edition ${editionToLoad}`);
+    }
+    
+    // Set selected work
+    dispatch({ type: ACTIONS.SET_SELECTED_WORK, payload: content });
+    dispatch({ type: ACTIONS.SET_ACTIVE_VIEW, payload: 'workspace' });
+    
+    const editionLabel = selectedEdition ? ` (${selectedEdition.date} edition)` : '';
+    addNotification('success', `Loaded: ${content.title}${editionLabel}`);
+    
+    return content;
+  } catch (error) {
+    addNotification('error', 'Failed to load work: ' + error.message);
+    throw error;
+  } finally {
+    dispatch({ type: ACTIONS.SET_LOADING, payload: { key: 'work', value: false } });
+  }
+}, [addNotification, api, dispatch, state.library.availableWorks]);
+const loadSession = useCallback(async (sessionId) => {
+  dispatch({ type: ACTIONS.SET_LOADING, payload: { key: 'session', value: true } });
+  
+  try {
+    const session = await api.getSession(sessionId);
+    
+    console.log('📂 Loading session:', session.name);
+    
+    // 1. Load work
+    await loadWork(session.author_folder, session.work_id);
+    
+    // 2. Load segments
+    if (session.segments && session.segments.length > 0) {
+      dispatch({
+        type: ACTIONS.LOAD_SAVED_SEGMENTATION,
+        payload: { segments: session.segments }
+      });
+    }
+    
+    // 3. Load results if available
+    let loadedPatterns = [];
+    
+    if (session.selected_results_metadata && session.selected_results_metadata.length > 0) {
+      // Load all selected results
+      for (const resultId of session.selected_results_metadata) {
+        try {
+          if (resultId === 'current' && session.result_id) {
+            const result = await api.getResultDetails(session.result_id);
+            const patterns = result.is_multi_edition
+              ? transformMultiEditionToPatterns(result)
+              : transformResultsToPatterns(result);
+            loadedPatterns.push(...patterns);
+          } else if (resultId !== 'current') {
+            const result = await api.getResultDetails(resultId);
+            const patterns = result.is_multi_edition
+              ? transformMultiEditionToPatterns(result)
+              : transformResultsToPatterns(result);
+            loadedPatterns.push(...patterns);
+          }
+        } catch (error) {
+          console.warn('Could not load result:', resultId, error);
+        }
+      }
+    } else if (session.result_id) {
+      // Fallback to single result_id
+      try {
+        const result = await api.getResultDetails(session.result_id);
+        loadedPatterns = result.is_multi_edition
+          ? transformMultiEditionToPatterns(result)
+          : transformResultsToPatterns(result);
+      } catch (error) {
+        console.warn('Could not load session results:', error);
+      }
+    }
+    
+    if (loadedPatterns.length > 0) {
+      dispatch({
+        type: ACTIONS.SET_RESULTS,
+        payload: { patterns: loadedPatterns, lastJobId: session.result_id }
+      });
+    }
+    
+    // 4. Restore ALL tab states with history
+    const tabStates = {
+      chat: {
+        messages: session.chat_messages || []
+      },
+      hypothesis: session.hypothesis_state || {
+        hypothesis: '',
+        evidence: [],
+        result: null
+      },
+      narrative: session.narrative_state || {
+        narrative: null,
+        options: {},
+        history: []  // ← ADD HISTORY
+      },
+      compare: session.edition_comparison_state || {
+        edition1: null,
+        edition2: null,
+        comparison: null,
+        history: []  // ← ADD HISTORY
+      },
+      segment: session.segment_analysis_state || {
+        selectedSegment: null,
+        question: '',
+        analysis: null,
+        history: []  // ← ADD HISTORY
+      },
+      report: {
+        config: session.report_config || {},
+        generated_reports: session.generated_reports || []  // ← ADD HISTORY
+      }
+    };
+    
+    // 5. Set current session with loaded patterns
+    dispatch({
+      type: ACTIONS.SET_CURRENT_SESSION,
+      payload: {
+        ...session,
+        tabStates,
+        lastTab: session.last_tab || 'chat',
+        loaded_patterns: loadedPatterns  // Store in memory
+      }
+    });
+    
+    addNotification('success', `Loaded session: ${session.name} (${loadedPatterns.length} patterns)`);
+    dispatch({ type: ACTIONS.SET_ACTIVE_VIEW, payload: 'results' });
+    
+    return session;
+  } catch (error) {
+    addNotification('error', 'Failed to load session: ' + error.message);
+    throw error;
+  } finally {
+    dispatch({ type: ACTIONS.SET_LOADING, payload: { key: 'session', value: false } });
+  }
+}, [loadWork, addNotification, api, dispatch]);
+
+const updateSessionTabState = useCallback((tab, newState) => {
+  dispatch({
+    type: ACTIONS.UPDATE_SESSION_TAB_STATE,
+    payload: { tab, state: newState }
+  });
+  
+  // Auto-save the change
+  const tabStateUpdate = {
+    [`${tab}_state`]: newState,
+    last_tab: tab
+  };
+  autoSaveSession(tabStateUpdate);
+}, [dispatch, autoSaveSession]);
+
+const closeSession = useCallback(() => {
+  dispatch({ type: ACTIONS.CLEAR_CURRENT_SESSION });
+  addNotification('info', 'Session closed');
+}, [dispatch, addNotification]);
 const analyzeStatisticalImprobability = useCallback(async (decodedText, segmentLength, cipherMethod) => {
   try {
     const result = await api.calculateStatisticalImprobability(decodedText, segmentLength, cipherMethod);
@@ -1356,18 +2148,381 @@ const suggestLetters = useCallback(async (partialDecode, remainingLetters, targe
   }
 }, [addNotification]);
 
-const chatWithAI = useCallback(async (message) => {
+const chatWithAI = useCallback(async (message, options = {}) => {
   try {
-    const history = state.analyze.aiChatHistory || [];
-    const result = await api.chatWithAI(message, history);
-    dispatch({ type: ACTIONS.UPDATE_AI_CHAT_HISTORY, payload: { role: 'user', content: message } });
-    dispatch({ type: ACTIONS.UPDATE_AI_CHAT_HISTORY, payload: { role: 'assistant', content: result.response } });
+    console.log('💬 AI Chat Request:', { message: message.slice(0, 100) });
+    
+    // Get current results
+    let currentResults = state.results.patterns;
+    
+    // If no patterns in state, try to load from latest result
+    if (!currentResults || currentResults.length === 0) {
+      try {
+        const latestResult = await api.getLatestResult();
+        
+        if (latestResult.is_multi_edition) {
+          const allPatterns = [];
+          for (const [editionId, editionData] of Object.entries(latestResult.editions || {})) {
+            if (!editionData.error) {
+              const editionPatterns = transformEditionToPatterns(editionData, latestResult);
+              allPatterns.push(...editionPatterns);
+            }
+          }
+          currentResults = allPatterns;
+        } else {
+          currentResults = transformResultsToPatterns(latestResult);
+        }
+      } catch (error) {
+        console.error('Could not load latest result:', error);
+        currentResults = [];
+      }
+    }
+    
+    // Extract work metadata from patterns
+    let work_id = 'unknown';
+    let author = 'Unknown';
+    let work_title = 'Unknown';
+    
+    if (currentResults && currentResults.length > 0) {
+      const metadata = currentResults[0].metadata || {};
+      work_id = metadata.work_id || metadata.edition_id || 'unknown';
+      author = metadata.author || 'Unknown';
+      work_title = metadata.work_title || 'Unknown';
+    }
+    
+    // Build conversation history
+    const conversationHistory = (state.analyze.aiChatHistory || []).map(msg => ({
+      role: msg.role,
+      content: msg.content,
+      timestamp: typeof msg.timestamp === 'number' 
+        ? new Date(msg.timestamp).toISOString() 
+        : msg.timestamp
+    }));
+    
+    // Build context
+    const context = {
+      work_id,
+      author,
+      work_title,
+      current_results: currentResults?.length > 0 ? {
+        segments: currentResults.map(p => ({
+          segment_info: {
+            id: p.segment_id,
+            name: p.section_name
+          },
+          decode_results: {
+            final_ranking: [p.best_candidate].filter(Boolean).concat(
+              (p.credible_candidates || []).slice(0, 4)
+            ).map(c => ({
+              method: c?.method || 'unknown',
+              decoded_message: c?.decoded_message || '',
+              confidence: c?.confidence || 0,
+              entities: c?.entities || [],
+              spoilage: c?.spoilage || 0
+            }))
+          }
+        })).slice(0, 20),
+        total_count: currentResults.length
+      } : null,
+      command: options.command,
+      command_data: options.command_data
+    };
+    
+    console.log('💬 Context:', {
+      has_work: !!work_id && work_id !== 'unknown',
+      has_results: !!context.current_results,
+      results_count: context.current_results?.total_count || 0
+    });
+    
+    // Call API
+    const result = await api.chatWithAI(message, conversationHistory, context);
+    
+    // Update chat history
+    dispatch({ 
+      type: ACTIONS.UPDATE_AI_CHAT_HISTORY, 
+      payload: { 
+        role: 'user', 
+        content: message, 
+        timestamp: new Date().toISOString()
+      }
+    });
+    
+    dispatch({ 
+      type: ACTIONS.UPDATE_AI_CHAT_HISTORY, 
+      payload: { 
+        role: 'assistant', 
+        content: result.response, 
+        timestamp: new Date().toISOString()
+      }
+    });
+    
     return result;
   } catch (error) {
-    addNotification('error', 'AI chat failed: ' + error.message);
+    console.error('AI chat error:', error);
+    addNotification('error', `AI chat failed: ${error.message}`);
     throw error;
   }
-}, [state.analyze.aiChatHistory, addNotification]);
+}, [state.results.patterns, state.analyze.aiChatHistory, addNotification, api, dispatch]);
+
+
+const enhanceDecodeWithAI = useCallback(async (decodedText, mode = 'standard') => {
+  try {
+    dispatch({ type: ACTIONS.SET_LOADING, payload: { key: 'aiEnhancement', value: true } });
+    
+    const result = await api.enhanceDecodeWithAI(decodedText, mode);
+    
+    dispatch({ type: ACTIONS.SET_AI_ENHANCEMENT, payload: result });
+    
+    addNotification('success', 'Decode enhanced successfully');
+    
+    return result;
+  } catch (error) {
+    addNotification('error', 'Enhancement failed: ' + error.message);
+    throw error;
+  } finally {
+    dispatch({ type: ACTIONS.SET_LOADING, payload: { key: 'aiEnhancement', value: false } });
+  }
+}, [addNotification, api, dispatch]);
+
+
+// AI letter arrangement suggestions
+const suggestLetterArrangements = useCallback(async (partialDecode, remainingLetters, targetEntities = [], maxSuggestions = 10) => {
+  try {
+    dispatch({ type: ACTIONS.SET_LOADING, payload: { key: 'letterSuggestions', value: true } });
+    
+    const result = await api.suggestLetterArrangements(
+      partialDecode,
+      remainingLetters,
+      targetEntities,
+      maxSuggestions
+    );
+    
+    dispatch({ type: ACTIONS.SET_LETTER_SUGGESTIONS, payload: result });
+    
+    addNotification('success', `Generated ${result.suggestions?.length || 0} letter arrangements`);
+    
+    return result;
+  } catch (error) {
+    addNotification('error', 'Letter suggestion failed: ' + error.message);
+    throw error;
+  } finally {
+    dispatch({ type: ACTIONS.SET_LOADING, payload: { key: 'letterSuggestions', value: false } });
+  }
+}, [addNotification, api, dispatch]);
+
+// Propose research hypothesis
+const proposeHypothesis = useCallback(async (hypothesis, evidence, workId = null, author = null) => {
+  try {
+    dispatch({ type: ACTIONS.SET_LOADING, payload: { key: 'hypothesis', value: true } });
+    
+    const result = await api.proposeHypothesis(hypothesis, evidence, workId, author);
+    
+    dispatch({ type: ACTIONS.SET_HYPOTHESIS_EVALUATION, payload: result });
+    
+    const score = result.plausibility_score || 0;
+    addNotification('success', `Hypothesis evaluated: ${score}/100 plausibility`);
+    
+    return result;
+  } catch (error) {
+    addNotification('error', 'Hypothesis evaluation failed: ' + error.message);
+    throw error;
+  } finally {
+    dispatch({ type: ACTIONS.SET_LOADING, payload: { key: 'hypothesis', value: false } });
+  }
+}, [addNotification, api, dispatch]);
+
+// Synthesize research narrative
+const synthesizeNarrative = useCallback(async (workId, author, includeNetwork = true) => {
+  try {
+    dispatch({ type: ACTIONS.SET_LOADING, payload: { key: 'narrative', value: true } });
+    
+    // CRITICAL FIX: Get current work from workspace
+    const currentWork = state.workspace?.currentSource;
+    
+    if (!currentWork && !workId) {
+      throw new Error('No work loaded. Please load a work in the Workspace first.');
+    }
+    
+    // Use current work if no workId provided
+    const actualWorkId = workId || currentWork?.id;
+    const actualAuthor = author || currentWork?.author;
+    
+    // Check if we have results to synthesize
+    const hasResults = (state.results?.patterns || []).length > 0;
+    
+    if (!hasResults) {
+      addNotification('warning', 'No analysis results found. Run an analysis first for better narrative generation.');
+    }
+    
+    console.log('🎨 Generating narrative for:', {
+      work_id: actualWorkId,
+      author: actualAuthor,
+      title: currentWork?.title,
+      has_results: hasResults,
+      results_count: state.results?.patterns?.length || 0
+    });
+    
+    // Call API with proper work_id and author
+    const result = await api.synthesizeNarrative(
+      actualWorkId,
+      actualAuthor,
+      includeNetwork
+    );
+    
+    
+    dispatch({ type: ACTIONS.SET_RESEARCH_NARRATIVE, payload: result });
+    
+    const wordCount = result.word_count || 0;
+    addNotification('success', `Generated ${wordCount}-word research narrative`);
+    
+    return result;
+  } catch (error) {
+    addNotification('error', 'Narrative synthesis failed: ' + error.message);
+    throw error;
+  } finally {
+    dispatch({ type: ACTIONS.SET_LOADING, payload: { key: 'narrative', value: false } });
+  }
+}, [addNotification, api, dispatch]);
+
+// AI edition comparison
+const compareEditionsWithAI = useCallback(async (edition1Id, edition2Id, authorFolder, mode = 'differential') => {
+  try {
+    dispatch({ type: ACTIONS.SET_LOADING, payload: { key: 'editionComparison', value: true } });
+    
+    const result = await api.compareEditionsWithAI(edition1Id, edition2Id, authorFolder, mode);
+    
+    dispatch({ type: ACTIONS.SET_AI_EDITION_COMPARISON, payload: result });
+    
+    const intentionality = result.ai_interpretation?.intentionality_score || 0;
+    addNotification('success', `Edition comparison complete: ${intentionality}/100 intentionality`);
+    
+    return result;
+  } catch (error) {
+    addNotification('error', 'Edition comparison failed: ' + error.message);
+    throw error;
+  } finally {
+    dispatch({ type: ACTIONS.SET_LOADING, payload: { key: 'editionComparison', value: false } });
+  }
+}, [addNotification, api, dispatch]);
+
+// Build entity network
+const buildEntityNetwork = useCallback(async (workId, author, includeClusters = true) => {
+  try {
+    dispatch({ type: ACTIONS.SET_LOADING, payload: { key: 'entityNetwork', value: true } });
+    
+    const result = await api.buildEntityNetwork(workId, author, includeClusters, 2);
+    
+    dispatch({ type: ACTIONS.SET_ENTITY_NETWORK, payload: result });
+    
+    const nodeCount = result.statistics?.total_entities || 0;
+    addNotification('success', `Built entity network: ${nodeCount} entities, ${result.statistics?.total_relationships || 0} relationships`);
+    
+    return result;
+  } catch (error) {
+    addNotification('error', 'Entity network build failed: ' + error.message);
+    throw error;
+  } finally {
+    dispatch({ type: ACTIONS.SET_LOADING, payload: { key: 'entityNetwork', value: false } });
+  }
+}, [addNotification, api, dispatch]);
+
+const exportResearchReport = useCallback(async (workId, author, options = {}) => {
+  try {
+    dispatch({ type: ACTIONS.SET_LOADING, payload: { key: 'reportExport', value: true } });
+    
+    addNotification('info', 'Generating comprehensive research report...', {
+      duration: 5000
+    });
+    
+    const result = await api.exportResearchReport(
+      workId,
+      author,
+      options.includeNarrative !== false,
+      options.includeNetwork !== false,
+      options.includeRawData || false,
+      options.format || 'markdown'
+    );
+    
+    addNotification('success', `Report generated: ${result.filename}`);
+    
+    // Trigger download
+    if (result.download_url) {
+      const downloadUrl = `${API_BASE_URL}${result.download_url}`;
+      
+      // Create temporary link and trigger download
+      const link = document.createElement('a');
+      link.href = downloadUrl;
+      link.download = result.filename;
+      link.style.display = 'none';
+      document.body.appendChild(link);
+      link.click();
+      
+      // Cleanup
+      setTimeout(() => {
+        document.body.removeChild(link);
+      }, 100);
+    }
+    
+    return result;
+  } catch (error) {
+    addNotification('error', 'Report export failed: ' + error.message);
+    throw error;
+  } finally {
+    dispatch({ type: ACTIONS.SET_LOADING, payload: { key: 'reportExport', value: false } });
+  }
+}, [addNotification, api, dispatch]);
+
+// Analyze specific segment with AI
+const analyzeSegmentWithAI = useCallback(async (segmentId, segmentText, decodeResults, question = null) => {
+  try {
+    dispatch({ type: ACTIONS.SET_LOADING, payload: { key: 'segmentAIAnalysis', value: true } });
+    
+    const result = await api.analyzeSegmentWithAI(segmentId, segmentText, decodeResults, question);
+    
+    dispatch({ type: ACTIONS.SET_SEGMENT_AI_ANALYSIS, payload: result });
+    
+    addNotification('success', 'Segment analysis complete');
+    
+    return result;
+  } catch (error) {
+    addNotification('error', 'Segment analysis failed: ' + error.message);
+    throw error;
+  } finally {
+    dispatch({ type: ACTIONS.SET_LOADING, payload: { key: 'segmentAIAnalysis', value: false } });
+  }
+}, [addNotification, api, dispatch]);
+
+// Get AI model statistics
+const getAIModelStats = useCallback(async () => {
+  try {
+    const result = await api.getAIModelStats();
+    
+    dispatch({ type: ACTIONS.SET_AI_MODEL_STATS, payload: result });
+    
+    return result;
+  } catch (error) {
+    addNotification('error', 'Failed to load AI stats: ' + error.message);
+    throw error;
+  }
+}, [addNotification, api, dispatch]);
+
+// Clear AI cache
+const clearAICache = useCallback(async () => {
+  try {
+    await api.clearAICache();
+    
+    addNotification('success', 'AI cache cleared');
+  } catch (error) {
+    addNotification('error', 'Failed to clear cache: ' + error.message);
+    throw error;
+  }
+}, [addNotification, api]);
+
+// Clear chat history
+const clearAIChatHistory = useCallback(() => {
+  dispatch({ type: ACTIONS.CLEAR_AI_CHAT_HISTORY });
+  addNotification('info', 'Chat history cleared');
+}, [addNotification, dispatch]);
 
 const reconstructGibberish = useCallback(async (gibberishText, maxReconstructions = 5) => {
   try {
@@ -1448,88 +2603,6 @@ const selectAuthor = useCallback(async (authorFolder) => {
   }
 }, [addNotification, api, dispatch]);
 
-// Update the loadWork function to properly handle edition_count:
-
-const loadWork = useCallback(async (authorFolder, workId, selectedEdition = null) => {
-  dispatch({ type: ACTIONS.SET_LOADING, payload: { key: 'work', value: true } });
-  
-  try {
-    // Determine which edition to load
-    const editionToLoad = selectedEdition?.id || workId;
-    
-    console.log(`📖 Loading work: ${workId}${selectedEdition ? ` (Edition: ${selectedEdition.date})` : ''}`);
-    
-    // Load the edition content
-    const content = await api.getWorkContent(authorFolder, editionToLoad);
-    console.log(`✅ Loaded work: ${content.title} (${content.line_count} lines)`);
-    
-    // Get the original work from availableWorks to preserve edition_count
-    const originalWork = state.library.availableWorks.find(w => w.id === workId);
-    
-    // Cancel any running analysis
-    dispatch({ type: ACTIONS.CANCEL_ANALYSIS });
-    
-    // Set active source with edition metadata AND edition_count preserved
-    dispatch({ 
-      type: ACTIONS.SET_ACTIVE_SOURCE, 
-      payload: {
-        ...content,
-        author_folder: authorFolder,
-        base_work_id: workId, // Store the base work ID (primary edition ID)
-        edition_count: originalWork?.edition_count || 1,  // ← PRESERVE THIS!
-        selected_edition: selectedEdition || {
-          id: editionToLoad,
-          date: content.date,
-          isPrimary: editionToLoad === workId
-        }
-      }
-    });
-    
-    // Try to load saved segmentation for THIS SPECIFIC EDITION
-    try {
-      const segmentation = await api.getSegmentation(editionToLoad);
-      if (segmentation?.segments?.length > 0) {
-        console.log(`✅ Loaded saved segmentation: ${segmentation.segments.length} segments for edition ${editionToLoad}`);
-        
-        const boundaries = [0];
-        segmentation.segments.forEach(seg => {
-          boundaries.push(seg.end_line + 1);
-        });
-        
-        if (boundaries[boundaries.length - 1] !== content.lines.length) {
-          boundaries.push(content.lines.length);
-        }
-        
-        dispatch({ 
-          type: ACTIONS.LOAD_SAVED_SEGMENTATION, 
-          payload: {
-            segments: segmentation.segments,
-            boundaries: boundaries
-          }
-        });
-        
-        const editionLabel = selectedEdition ? ` for ${selectedEdition.date} edition` : '';
-        addNotification('info', `Loaded ${segmentation.segments.length} segments${editionLabel}`);
-      }
-    } catch (err) {
-      console.log(`ℹ️  No saved segmentation found for edition ${editionToLoad}`);
-    }
-    
-    // Set selected work
-    dispatch({ type: ACTIONS.SET_SELECTED_WORK, payload: content });
-    dispatch({ type: ACTIONS.SET_ACTIVE_VIEW, payload: 'workspace' });
-    
-    const editionLabel = selectedEdition ? ` (${selectedEdition.date} edition)` : '';
-    addNotification('success', `Loaded: ${content.title}${editionLabel}`);
-    
-    return content;
-  } catch (error) {
-    addNotification('error', 'Failed to load work: ' + error.message);
-    throw error;
-  } finally {
-    dispatch({ type: ACTIONS.SET_LOADING, payload: { key: 'work', value: false } });
-  }
-}, [addNotification, api, dispatch, state.library.availableWorks]);
 const saveWorkText = useCallback(async (workId, authorFolder, text) => {
     try {
       await api.saveWorkContent(workId, authorFolder, text);
@@ -1716,7 +2789,6 @@ const loadAllEditions = useCallback(async (authorFolder, baseWorkId) => {
 
 const pollJobStatus = useCallback(async (jobId) => {
   try {
-    // Use the api client instead of raw fetch
     const jobData = await api.getJobStatus(jobId);
     
     dispatch({
@@ -1724,14 +2796,61 @@ const pollJobStatus = useCallback(async (jobId) => {
       payload: jobData
     });
     
-    // Continue polling if job is still running
+    // When job completes, load results from file system
+    if (jobData.status === 'completed') {
+      console.log('✅ Job completed, loading results from file system...');
+      
+      try {
+        // Use new endpoint to get latest result
+        const result = await api.getLatestResult();
+        console.log('📊 Loaded result:', result.result_id);
+        
+        // Transform based on result type
+        let patterns = [];
+        
+        if (result.is_multi_edition) {
+          for (const [editionId, editionData] of Object.entries(result.editions || {})) {
+            if (!editionData.error) {
+              const editionPatterns = transformEditionToPatterns(editionData, result);
+              patterns.push(...editionPatterns);
+            }
+          }
+        } else {
+          patterns = transformResultsToPatterns(result);
+        }
+        
+        console.log(`✅ Loaded ${patterns.length} patterns`);
+        
+        dispatch({
+          type: ACTIONS.SET_RESULTS,
+          payload: {
+            patterns: patterns,
+            lastJobId: result.result_id
+          }
+        });
+        
+        dispatch({ type: ACTIONS.SET_LOADING, payload: { key: 'analysis', value: false } });
+        dispatch({ type: ACTIONS.SET_ACTIVE_VIEW, payload: 'results' });
+        
+        addNotification('success', `Analysis complete: ${patterns.length} patterns found`);
+        
+      } catch (error) {
+        console.error('❌ Error loading results:', error);
+        addNotification('error', 'Failed to load results: ' + error.message);
+      }
+      
+      return; // Stop polling
+    }
+    
+    // Continue polling if still running
     if (['queued', 'processing', 'paused'].includes(jobData.status)) {
       setTimeout(() => pollJobStatus(jobId), 1000);
     }
+    
   } catch (error) {
     console.error('Error polling job status:', error);
   }
-}, []);
+}, [addNotification]);
 
 // ✅ ADD THIS NEW FUNCTION HERE
 const startPollingJobStatus = useCallback((jobId) => {
@@ -2076,21 +3195,118 @@ if (Object.keys(editionConfigs).length > 0) {
   }
   
 }, [state.workspace, state.analyze, dispatch]);
-  const exportResults = useCallback((format = 'json') => {
-    const jobId = state.analyze.currentJob?.job_id || state.results.lastJobId;
-    
-    if (!jobId) {
-      addNotification('warning', 'No results to export');
-      return;
-    }
 
-    try {
-      api.downloadResults(jobId, format);
-      addNotification('success', `Downloading results as ${format.toUpperCase()}...`);
-    } catch (error) {
-      addNotification('error', 'Export failed: ' + error.message);
+const exportResults = useCallback(async (format = 'excel') => {
+  console.log('🔥 EXPORT STARTED');
+  
+  // Get the result ID from current job or last completed job
+  const currentJob = state.analyze.currentJob;
+  const lastJobId = state.results.lastJobId;
+  
+  console.log('   Current job:', currentJob);
+  console.log('   Last job ID:', lastJobId);
+  
+  // ============================================================
+  // Determine the CORRECT filename for the result file
+  // ============================================================
+  let resultFilename = null;
+  
+  if (currentJob) {
+    // Use the job's work_key or build it from metadata
+    if (currentJob.is_multi_edition) {
+      // Multi-edition: Use work_key
+      resultFilename = currentJob.work_key || 
+                       `${currentJob.author}_${currentJob.work_title}`.replace(/\s+/g, '_').toLowerCase();
+      resultFilename = `${resultFilename}_multi_edition`;
+    } else {
+      // Single-edition: Use job_id
+      resultFilename = `${currentJob.job_id}_result`;
     }
-  }, [state, addNotification]);
+  } else if (lastJobId) {
+    // Fallback: Use last job ID
+    if (lastJobId.includes('_multi_edition')) {
+      resultFilename = lastJobId;
+    } else {
+      resultFilename = `${lastJobId}_result`;
+    }
+  }
+  
+  console.log('   Result filename:', resultFilename);
+  
+  if (!resultFilename) {
+    console.error('❌ No result to export');
+    addNotification('warning', 'No results to export');
+    return;
+  }
+
+  try {
+    const baseUrl = 'http://localhost:8000';
+    
+    // ============================================================
+    // EXCEL EXPORT ONLY - Use fetch() to download
+    // ============================================================
+    console.log('📥 Fetching Excel file from backend...');
+    const url = `${baseUrl}/api/batch/export/${resultFilename}`;
+    console.log('   URL:', url);
+    
+    addNotification('info', 'Generating Excel file...', { duration: 2000 });
+    
+    // Fetch the file
+    const response = await fetch(url);
+    
+    console.log('   Response status:', response.status);
+    console.log('   Content-Type:', response.headers.get('content-type'));
+    
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('❌ Export failed:', errorText);
+      throw new Error(`Export failed: ${response.status} - ${errorText}`);
+    }
+    
+    // Check content type to ensure we got Excel, not JSON error
+    const contentType = response.headers.get('content-type');
+    if (contentType && contentType.includes('application/json')) {
+      // Backend returned JSON error instead of Excel
+      const errorData = await response.json();
+      console.error('❌ Backend returned JSON error:', errorData);
+      throw new Error(errorData.detail || 'Export failed - backend returned JSON instead of Excel');
+    }
+    
+    // Get the Excel file as blob
+    const blob = await response.blob();
+    console.log('   Blob size:', blob.size, 'bytes');
+    console.log('   Blob type:', blob.type);
+    
+    if (blob.size === 0) {
+      throw new Error('Downloaded file is empty');
+    }
+    
+    // Create a temporary download link and trigger download
+    const downloadUrl = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = downloadUrl;
+    link.download = `${resultFilename}.xlsx`;
+    link.style.display = 'none';
+    
+    document.body.appendChild(link);
+    link.click();
+    
+    // Cleanup after a short delay
+    setTimeout(() => {
+      document.body.removeChild(link);
+      URL.revokeObjectURL(downloadUrl);
+    }, 100);
+    
+    console.log('✅ Excel download triggered');
+    addNotification('success', 'Excel file downloaded successfully');
+    
+  } catch (error) {
+    console.error('❌ Export error:', error);
+    addNotification('error', 'Export failed: ' + error.message, {
+      duration: 5000
+    });
+  }
+}, [state, addNotification]);
 
   // ==================== ALL useEffect HOOKS AFTER CALLBACKS ====================
   useEffect(() => {
@@ -2127,52 +3343,68 @@ if (Object.keys(editionConfigs).length > 0) {
     initializeApp();
   }, [addNotification]);
 
-  useEffect(() => {
-    async function restoreLatestResults() {
-      console.log('🔍 Checking for latest completed analysis...');
+useEffect(() => {
+  async function restoreLatestResults() {
+    console.log('🔍 Checking for latest completed analysis...');
+    
+    try {
+      // Use new endpoint to get latest result directly from file system
+      const result = await api.getLatestResult();
       
-      try {
-        const allJobs = await api.getAllJobs();
-        const completedJobs = allJobs.filter(job => job.status === 'completed');
+      console.log('✅ Found latest result:', result.result_id);
+      console.log('📊 Result type:', result.is_multi_edition ? 'Multi-edition' : 'Single-edition');
+      
+      // Transform based on result type
+      let patterns = [];
+      
+      if (result.is_multi_edition) {
+        // Multi-edition result
+        console.log(`📚 Processing ${Object.keys(result.editions || {}).length} editions`);
         
-        if (completedJobs.length === 0) {
-          console.log('📭 No completed jobs found');
-          return;
+        for (const [editionId, editionData] of Object.entries(result.editions || {})) {
+          if (editionData.error) {
+            console.warn(`⚠️  Edition ${editionId} had error:`, editionData.error);
+            continue;
+          }
+          
+          const editionPatterns = transformEditionToPatterns(editionData, result);
+          patterns.push(...editionPatterns);
         }
-
-        const latestJob = completedJobs.sort((a, b) => 
-          new Date(b.created_at) - new Date(a.created_at)
-        )[0];
-
-        console.log('✅ Found latest job:', latestJob.job_id);
-
-        const result = await api.getJobResults(latestJob.job_id);
-        const patterns = transformResultsToPatterns(result);
-        
-        console.log(`✅ Restored ${patterns.length} patterns`);
-        
+      } else {
+        // Single-edition result
+        patterns = transformResultsToPatterns(result);
+      }
+      
+      console.log(`✅ Restored ${patterns.length} patterns from latest analysis`);
+      
+      if (patterns.length > 0) {
         dispatch({ 
           type: ACTIONS.SET_RESULTS, 
           payload: {
             patterns: patterns,
-            lastJobId: latestJob.job_id
+            lastJobId: result.result_id
           }
         });
         
         addNotification('info', `Restored ${patterns.length} results from latest analysis`, {
           duration: 3000
         });
-        
-      } catch (error) {
-        if (!error.message.includes('404')) {
-          console.error('❌ Error restoring latest results:', error);
-        }
+      }
+      
+    } catch (error) {
+      // If 404, no results yet - this is normal
+      if (error.message.includes('404') || error.message.includes('No results found')) {
+        console.log('📭 No previous results found');
+      } else {
+        console.error('❌ Error restoring latest results:', error);
       }
     }
-    
-    const timer = setTimeout(restoreLatestResults, 1500);
-    return () => clearTimeout(timer);
-  }, [addNotification]);
+  }
+  
+  const timer = setTimeout(restoreLatestResults, 1500);
+  return () => clearTimeout(timer);
+}, [addNotification]);
+
 
   useEffect(() => {
     const timers = state.ui.notifications
@@ -2186,19 +3418,87 @@ if (Object.keys(editionConfigs).length > 0) {
     return () => timers.forEach(clearTimeout);
   }, [state.ui.notifications]);
 
+  // In AppContext.jsx, find the restoreLatestResults useEffect (around line 1100)
+// Add the upload call after loading results:
+
+useEffect(() => {
+  async function restoreLatestResults() {
+    console.log('🔍 Checking for latest completed analysis...');
+    
+    try {
+      const result = await api.getLatestResult();
+      
+      console.log('✅ Found latest result:', result.result_id);
+      
+      // Transform based on result type
+      let patterns = [];
+      
+      if (result.is_multi_edition) {
+        for (const [editionId, editionData] of Object.entries(result.editions || {})) {
+          if (editionData.error) continue;
+          const editionPatterns = transformEditionToPatterns(editionData, result);
+          patterns.push(...editionPatterns);
+        }
+      } else {
+        patterns = transformResultsToPatterns(result);
+      }
+      
+      console.log(`✅ Restored ${patterns.length} patterns from latest analysis`);
+      
+      if (patterns.length > 0) {
+        dispatch({ 
+          type: ACTIONS.SET_RESULTS, 
+          payload: {
+            patterns: patterns,
+            lastJobId: result.result_id
+          }
+        });
+        
+        addNotification('info', `Restored ${patterns.length} results from latest analysis`, {
+          duration: 3000
+        });
+        
+        // ============================================================
+        // NEW: Auto-upload to Drive if enabled
+        // ============================================================
+        if (config.ENABLE_DRIVE_UPLOAD) {
+          console.log('📤 Auto-uploading latest result to Drive...');
+          uploadResultToDrive(result.result_id);
+        }
+      }
+      
+    } catch (error) {
+      if (!error.message.includes('404') && !error.message.includes('No results found')) {
+        console.error('❌ Error restoring latest results:', error);
+      }
+    }
+  }
+  
+  const timer = setTimeout(restoreLatestResults, 1500);
+  return () => clearTimeout(timer);
+}, [addNotification, uploadResultToDrive]);
+
   // ==================== CONTEXT VALUE ====================
   // Update the value object to include new functions:
-
+// Around line 1200 in AppContext.jsx, update the value object:
 const value = {
+  updateSessionTabState,
+  autoSaveSession,
+  closeSession,
+  createSession,
+  loadSession,
+  listSessions,
+  deleteSession,
   state,
   dispatch,
+  uploadResultToDrive,  // ← ADD THIS
+
   api,
-  // Existing functions
   addNotification,
   toggleModal,
   selectAuthor,
   loadWork,
-  loadAllEditions,  // ← NEW
+  loadAllEditions,
   saveWorkText,
   createAutoSegmentation,
   saveSegmentation,
@@ -2206,24 +3506,30 @@ const value = {
   deleteSegmentation,
   startAnalysis,
   exportResults,
-  // NEW AI Segmentation functions
   createAISegmentation,
   analyzeSegmentsWithAI,
   prioritizeSegmentsWithAI,
-  // Advanced analysis functions
   analyzeStatisticalImprobability,
   analyzeEntityClustering,
   getSpoilageDistribution,
   extractThematicLayers,
   compareWorks,
-  // Multi-edition functions
   analyzeMultiEdition,
   compareEditions,
-  // Interactive analysis
   suggestLetters,
   chatWithAI,
   reconstructGibberish,
-  // Batch & export
+  enhanceDecodeWithAI,           // ← ADD
+  suggestLetterArrangements,     // ← ADD
+  proposeHypothesis,             // ← ADD
+  synthesizeNarrative,           // ← ADD
+  compareEditionsWithAI,         // ← ADD
+  buildEntityNetwork,            // ← ADD
+  exportResearchReport,          // ← ADD
+  analyzeSegmentWithAI,          // ← ADD
+  getAIModelStats,               // ← ADD
+  clearAICache,                  // ← ADD
+  clearAIChatHistory,            // ← ADD
   exportToSheets,
   getProgressDashboard,
 };
@@ -2231,6 +3537,69 @@ const value = {
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>;
 }
 
+function transformEditionToPatterns(editionResult, workResponse) {
+  if (!editionResult || !editionResult.segments) {
+    console.warn('No segments in edition result');
+    return [];
+  }
+
+  return editionResult.segments
+    .filter(segment => {
+      // Backend uses 'decode_results.final_ranking'
+      const decodings = segment.decode_results?.final_ranking || [];
+      return decodings.length > 0;
+    })
+    .map((segment, idx) => {
+      const decodings = segment.decode_results?.final_ranking || [];
+      const topDecoding = decodings[0] || {};
+      
+      const credibleDecodings = decodings.filter(d => 
+        (d.confidence || 0) >= 70
+      );
+
+      return {
+        id: segment.segment_info?.id || `seg_${idx}`,
+        rank: idx + 1,
+        segment_id: segment.segment_info?.id,
+        section_name: segment.segment_info?.name || `Segment ${idx + 1}`,
+        is_encoded: true,
+        composite_score: Math.round(topDecoding.confidence || 0),
+        
+        // Map segment_info correctly
+        segment_info: segment.segment_info || {},
+        original_text: segment.segment_info?.text || '',
+        
+        // Use decode_results (not decoding_results)
+        decode_results: segment.decode_results || {},
+        
+        scores: {
+          composite: Math.round(topDecoding.confidence || 0),
+          detection: 0,
+          confidence: topDecoding.confidence || 0
+        },
+        
+        candidates: decodings,
+        credible_candidates: credibleDecodings,
+        best_candidate: topDecoding,
+        
+        entities_detected: decodings.flatMap(d => d.entities || []),
+        themes: [],
+        classification: topDecoding.method || 'UNKNOWN',
+        
+        metadata: {
+          author: workResponse.author || editionResult.author || 'Unknown',
+          work_title: workResponse.work || editionResult.work_title || 'Unknown',
+          edition_id: editionResult.edition_id,
+          edition_date: editionResult.date,  // ← ADD THIS
+          edition_name: editionResult.edition_name,  // ← ADD THIS
+          is_primary: editionResult.is_primary,  // ← ADD THIS
+          work_id: editionResult.edition_id,
+          section_id: segment.segment_info?.id,
+          has_credible: credibleDecodings.length > 0
+        }
+      };
+    });
+}
 
 function transformResultsToPatterns(result) {
   if (!result || !result.segments) {
@@ -2239,64 +3608,49 @@ function transformResultsToPatterns(result) {
 
   return result.segments
     .filter(segment => {
-      const decodings = segment.decoding_results?.top_decodings || [];
+      // Use correct backend field names
+      const decodings = segment.decode_results?.final_ranking || [];
       return decodings.length > 0;
     })
     .map((segment, idx) => {
-      const decodings = segment.decoding_results?.top_decodings || [];
+      const decodings = segment.decode_results?.final_ranking || [];
       const topDecoding = decodings[0] || {};
       
       const credibleDecodings = decodings.filter(d => 
-        (d.quality_score || 0) >= 0.7 || d.tier === "CREDIBLE"
+        (d.confidence || 0) >= 70
       );
 
       return {
-        id: segment.segment_id || `segment_${idx}`,
+        id: segment.segment_info?.id || segment.segment_id || `segment_${idx}`,
         rank: idx + 1,
-        segment_id: segment.segment_id,
-        section_name: segment.segment_name || `Segment ${idx + 1}`,
-        is_encoded: segment.anomaly_detection?.is_anomalous || false,
-        composite_score: Math.round((segment.anomaly_detection?.anomaly_score || 0) * 100),
+        segment_id: segment.segment_info?.id || segment.segment_id,
+        section_name: segment.segment_info?.name || segment.segment_name || `Segment ${idx + 1}`,
+        is_encoded: true,
+        composite_score: Math.round(topDecoding.confidence || 0),
         
-        // THESE ARE THE CRITICAL ADDITIONS:
-        segment_info: segment.segment_info || {
-          id: segment.segment_id,
-          name: segment.segment_name || `Segment ${idx + 1}`,
-          text: segment.segment_info?.text || segment.original_text || '',
-          lines: segment.segment_info?.lines || [],
-          start_line: segment.segment_info?.start_line,
-          end_line: segment.segment_info?.end_line
-        },
-        
-        original_text: segment.segment_info?.text || segment.original_text || '',
-        
-        // Add anomaly_detection
-        anomaly_detection: segment.anomaly_detection || {},
-        
-        // Add decoding_results
-        decoding_results: segment.decoding_results || {},
-        
-        // Add cipher_detection
-        cipher_detection: segment.cipher_detection || {},
+        segment_info: segment.segment_info || {},
+        original_text: segment.segment_info?.text || '',
+        decode_results: segment.decode_results || {},
         
         scores: {
-          composite: Math.round((segment.anomaly_detection?.anomaly_score || 0) * 100),
-          detection: Math.round((segment.anomaly_detection?.detection_confidence || 0) * 100),
-          confidence: segment.decoding_results?.confidence || 0
+          composite: Math.round(topDecoding.confidence || 0),
+          detection: 0,
+          confidence: topDecoding.confidence || 0
         },
+        
         candidates: decodings,
         credible_candidates: credibleDecodings,
         best_candidate: topDecoding,
+        
         entities_detected: decodings.flatMap(d => d.entities || []),
-        themes: segment.themes || [],
-        classification: segment.classification || 'UNKNOWN',
-        signal_breakdown: segment.signal_breakdown || {},
+        themes: [],
+        classification: topDecoding.method || 'UNKNOWN',
+        
         metadata: {
           author: result.author || 'Unknown',
           work_title: result.work_title || 'Unknown',
-          work_id: result.work_id || 'unknown',
-          section_id: segment.segment_id,
-          detection_score: segment.anomaly_detection?.anomaly_score || 0,
+          work_id: result.work_id || result.edition_id || 'unknown',
+          section_id: segment.segment_info?.id || segment.segment_id,
           has_credible: credibleDecodings.length > 0
         }
       };
@@ -2315,6 +3669,8 @@ export function useWorkspace() {
   const { state } = useAppState();
   return state.workspace;
 }
+
+
 
 export function useAnalyze() {
   const { state } = useAppState();

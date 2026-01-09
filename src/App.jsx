@@ -44,7 +44,7 @@ const VIEWS = {
   WORKSPACE: 'workspace',
   ANALYZE: 'analyze',
   RESULTS: 'results',
-  LIBRARY: 'library',
+  // LIBRARY: 'library',
   AI_CHAT: 'ai_chat'
 };
 
@@ -218,11 +218,8 @@ function useGlobalKeyboardShortcuts(options) {
             e.preventDefault();
             handleNavigate(VIEWS.RESULTS);
             break;
+
           case '4':
-            e.preventDefault();
-            handleNavigate(VIEWS.LIBRARY);
-            break;
-          case '5':
             e.preventDefault();
             handleNavigate(VIEWS.AI_CHAT);
             break;
@@ -252,18 +249,16 @@ function useGlobalKeyboardShortcuts(options) {
 // VIEW ROUTER COMPONENT
 // ============================================================================
 function ViewRouter(props) {
-  const { activeView } = props;
+  const { activeView, exportResults } = props;  // ← ADD exportResults here
 
   switch (activeView) {
     case VIEWS.WORKSPACE:
-      // WorkspaceView handles everything internally
       return <WorkspaceView />;
     case VIEWS.ANALYZE:
       return <AnalyzeView {...props} />;
     case VIEWS.RESULTS:
-      return <ResultsView {...props} />;
-    case VIEWS.LIBRARY:
-      return <LibraryView {...props} />;
+      return <ResultsView exportResults={exportResults} />;  // ← ADD exportResults prop
+
     case VIEWS.AI_CHAT:
       return <AIViewComponent />;
     default:
@@ -616,150 +611,9 @@ function BannerStat({ label, value, color }) {
   );
 }
 
-// ============================================================================
-// LIBRARY VIEW
-// ============================================================================
-function LibraryView(props) {
-  const { state, dispatch, handleNavigate } = props;
 
-  return (
-    <div className="container mx-auto px-6 py-8 max-w-screen-2xl space-y-6">
-      <LibraryHeader />
 
-      <SearchBar
-        value={state.library.searchQuery || ''}
-        onChange={(query) => dispatch({ type: ACTIONS.SET_LIBRARY_SEARCH, payload: query })}
-        placeholder="Search authors and works..."
-        suggestions={[]}
-        showSuggestions={false}
-      />
 
-      <LibraryTabs
-        activeTab={state.library.activeTab}
-        authorsCount={state.library.authors?.length || 0}
-        sessionsCount={state.library.savedSessions?.length || 0}
-        dispatch={dispatch}
-      />
-
-      {state.library.activeTab === 'sources' ? (
-        <LibrarySourcesContent state={state} dispatch={dispatch} />
-      ) : (
-        <LibrarySessionsContent
-          state={state}
-          handleNavigate={handleNavigate}
-        />
-      )}
-    </div>
-  );
-}
-
-function LibraryHeader() {
-  return (
-    <div className="flex items-start justify-between">
-      <div>
-        <h1 className="text-4xl font-bold text-gray-900 flex items-center gap-3">
-          <div className="p-2.5 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-xl shadow-lg">
-            <BookOpen className="w-8 h-8 text-white" />
-          </div>
-          Library
-        </h1>
-        <p className="text-gray-600 mt-2 text-lg">Browse corpus and manage analysis sessions</p>
-      </div>
-    </div>
-  );
-}
-
-function LibraryTabs({ activeTab, authorsCount, sessionsCount, dispatch }) {
-  return (
-    <div className="border-b border-gray-200">
-      <nav className="flex gap-4">
-        <LibraryTab
-          active={activeTab === 'sources'}
-          onClick={() => dispatch({ type: ACTIONS.SET_LIBRARY_TAB, payload: 'sources' })}
-          label={`Corpus (${authorsCount} authors)`}
-        />
-        <LibraryTab
-          active={activeTab === 'sessions'}
-          onClick={() => dispatch({ type: ACTIONS.SET_LIBRARY_TAB, payload: 'sessions' })}
-          label={`Sessions (${sessionsCount})`}
-        />
-      </nav>
-    </div>
-  );
-}
-
-function LibraryTab({ active, onClick, label }) {
-  return (
-    <button
-      onClick={onClick}
-      className={`
-        px-4 py-2 border-b-2 font-medium text-sm transition-colors
-        ${active
-          ? 'border-blue-600 text-blue-600'
-          : 'border-transparent text-gray-600 hover:text-gray-900'
-        }
-      `}
-    >
-      {label}
-    </button>
-  );
-}
-
-function LibrarySourcesContent({ state, dispatch }) {
-  const authors = state.library.authors || [];
-
-  if (authors.length === 0) {
-    return (
-      <div className="text-center py-12">
-        <BookOpen className="w-16 h-16 text-gray-400 mx-auto mb-4" />
-        <h3 className="text-lg font-semibold text-gray-900 mb-2">Loading Library</h3>
-        <p className="text-gray-600">Corpus is being loaded</p>
-      </div>
-    );
-  }
-
-  return (
-    <div className="space-y-6">
-      <div>
-        <h2 className="text-lg font-semibold text-gray-900 mb-4">Authors</h2>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {authors.map((author) => (
-            <AuthorCard
-              key={author.folder_name}
-              author={author}
-              isSelected={state.library.selectedAuthor === author.folder_name}
-              onClick={() => dispatch({ type: ACTIONS.SET_SELECTED_AUTHOR, payload: author.folder_name })}
-            />
-          ))}
-        </div>
-      </div>
-
-      {state.library.selectedAuthor && (state.library.availableWorks || []).length > 0 && (
-        <div>
-          <h2 className="text-lg font-semibold text-gray-900 mb-4">
-            Works by {authors.find(a => a.folder_name === state.library.selectedAuthor)?.name}
-          </h2>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {(state.library.availableWorks || []).map((work) => (
-              <SourceCard
-                key={work.id}
-                source={work}
-                showActions={true}
-                compact={false}
-              />
-            ))}
-          </div>
-        </div>
-      )}
-
-      {state.library.selectedAuthor && (state.library.availableWorks || []).length === 0 && (
-        <div className="text-center py-12">
-          <p className="text-gray-600">No works found for this author</p>
-        </div>
-      )}
-    </div>
-  );
-}
 
 function AuthorCard({ author, isSelected, onClick }) {
   return (
