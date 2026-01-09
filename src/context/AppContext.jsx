@@ -26,7 +26,7 @@ function mapSegmentationType(mode) {
 }
 // ==================== CONFIGURATION ====================
 // const API_BASE_URL = 'http://192.99.245.215:8000'
-const API_BASE_URL = 'http://localhost:8000'
+const API_BASE_URL = 'http://192.99.245.215:8000'
 
 // ==================== API CLIENT ====================
 class APIClient {
@@ -3240,7 +3240,7 @@ const exportResults = useCallback(async (format = 'excel') => {
   }
 
   try {
-    const baseUrl = 'http://localhost:8000';
+    const baseUrl = 'http://192.99.245.215:8000';
     
     // ============================================================
     // EXCEL EXPORT ONLY - Use fetch() to download
