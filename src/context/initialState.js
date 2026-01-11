@@ -14,6 +14,13 @@ export const INITIAL_STATE = {
     aiPrioritization: null,
     multiEditionConfig: null,
   },
+    upload: {
+    isUploading: false,
+    progress: 0,
+    currentFile: null,
+    error: null,
+  },
+  
 
   // ==================== ANALYZE STATE ====================
   analyze: {

@@ -7,8 +7,8 @@ import {
   Search, 
   ChevronRight, 
   ChevronLeft,
-  ChevronUp,     // ADD THIS
-  ChevronDown,   // ADD THIS
+  ChevronUp,
+  ChevronDown,
   Upload, 
   FileText, 
   Check, 
@@ -22,8 +22,9 @@ import {
   Clock,
   Filter,
   Download,
-  Hash,          // ADD THIS for EditionCard
-  Percent        // ADD THIS for EditionCard
+  Hash,
+  Percent,
+  AlertCircle
 } from 'lucide-react';
 
 // ============================================================================
@@ -45,18 +46,26 @@ const MAX_RECENT_WORKS = 10;
 // MAIN COMPONENT
 // ============================================================================
 const SourcePicker = ({ onSourceSelect, selectedSourceId, compact = false }) => {
-  const { state, dispatch, selectAuthor, loadWork, addNotification } = useAppState();
+  const { 
+    state, 
+    dispatch, 
+    selectAuthor, 
+    loadWork, 
+    addNotification,
+    uploadWorkFile,
+    getAuthorsForUpload
+  } = useAppState();
+  
   const { authors, selectedAuthor, availableWorks } = state.library;
   
   const [activeTab, setActiveTab] = useState(TABS.LIBRARY);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedAuthorFolder, setSelectedAuthorFolder] = useState(null);
-  const [uploadedFile, setUploadedFile] = useState(null);
   const [pasteData, setPasteData] = useState({ title: '', text: '' });
   const [recentWorks, setRecentWorks] = useState([]);
   const [filterOptions, setFilterOptions] = useState({
-    dateRange: 'all', // all, 1500s, 1600s, 1700s
-    hasSegmentation: 'all', // all, yes, no
+    dateRange: 'all',
+    hasSegmentation: 'all',
     minLines: 0
   });
 
@@ -126,7 +135,7 @@ const handleWorkSelect = useCallback(async (work) => {
   } catch (error) {
     addNotification('error', `Failed to load work: ${error.message}`);
   }
-}, [loadWork, dispatch, addNotification, onSourceSelect, addToRecentWorks]);
+}, [loadWork, dispatch, addNotification, onSourceSelect, addToRecentWorks, uploadWorkFile]);
 
   const handleBackToAuthors = useCallback(() => {
     setSelectedAuthorFolder(null);
@@ -137,62 +146,60 @@ const handleWorkSelect = useCallback(async (work) => {
   // ============================================================================
   // UPLOAD HANDLERS
   // ============================================================================
-  const handleFileUpload = useCallback((event) => {
-    const file = event.target.files?.[0];
-    if (!file) return;
+const handleFileUpload = useCallback(async (file, uploadMetadata) => {
+  if (!file) return;
 
-    // Validate file type
-    const isValidType = ACCEPTED_FILE_TYPES.some(type => 
-      file.type === type || file.name.endsWith(type)
-    );
-    
-    if (!isValidType) {
-      addNotification('error', 'Please upload a .txt file');
-      return;
-    }
+  const isValidType = ACCEPTED_FILE_TYPES.some(type => 
+    file.type === type || file.name.endsWith(type)
+  );
+  
+  if (!isValidType) {
+    addNotification('error', 'Please upload a .txt file');
+    return;
+  }
 
-    // Validate file size
-    if (file.size > MAX_FILE_SIZE) {
-      addNotification('error', 'File too large. Maximum size is 10MB');
-      return;
-    }
+  if (file.size > MAX_FILE_SIZE) {
+    addNotification('error', 'File too large. Maximum size is 10MB');
+    return;
+  }
 
-    const reader = new FileReader();
-    
-    reader.onload = (e) => {
-      const text = e.target.result;
+  dispatch({ type: ACTIONS.SET_LOADING, payload: { key: 'upload', value: true } });
+
+  try {
+    const result = await uploadWorkFile(file, {
+      authorFolder: uploadMetadata.authorFolder,
+      workTitle: uploadMetadata.workTitle,
+      date: uploadMetadata.date || 'Unknown',
+      isNewAuthor: uploadMetadata.isNewAuthor || false
+    });
+
+    if (result) {
+      addNotification('success', `Successfully uploaded "${uploadMetadata.workTitle}"`);
       
-      const source = createSourceFromText(
-        text,
-        file.name.replace(/\.[^/.]+$/, ''),
-        'User Upload',
-        {
-          uploaded_at: new Date().toISOString(),
-          original_filename: file.name,
-        }
-      );
-
-      setUploadedFile(source);
-      addNotification('success', `File "${file.name}" loaded successfully`);
-    };
-
-    reader.onerror = () => {
-      addNotification('error', 'Failed to read file');
-    };
-
-    reader.readAsText(file);
-  }, [addNotification]);
-
-  const handleUploadedFileSelect = useCallback(() => {
-    if (uploadedFile) {
-      dispatch({ type: ACTIONS.SET_ACTIVE_SOURCE, payload: uploadedFile });
-      onSourceSelect?.(uploadedFile);
+      // Switch to Library tab to see the uploaded work
+      setActiveTab(TABS.LIBRARY);
+      
+      // If uploaded to existing author, refresh that author's works
+      if (!uploadMetadata.isNewAuthor && selectedAuthorFolder === uploadMetadata.authorFolder) {
+        await selectAuthor(uploadMetadata.authorFolder);
+      }
+      
+      // If new author, refresh authors list and select it
+      if (uploadMetadata.isNewAuthor) {
+        setSelectedAuthorFolder(uploadMetadata.authorFolder);
+        await selectAuthor(uploadMetadata.authorFolder);
+      }
     }
-  }, [uploadedFile, dispatch, onSourceSelect]);
+  } catch (error) {
+    console.error('Upload error:', error);
+    addNotification('error', `Upload failed: ${error.message}`);
+  } finally {
+    dispatch({ type: ACTIONS.SET_LOADING, payload: { key: 'upload', value: false } });
+  }
+}, [uploadWorkFile, addNotification, dispatch, selectedAuthorFolder, selectAuthor, setActiveTab]);
 
-  const handleClearUpload = useCallback(() => {
-    setUploadedFile(null);
-  }, []);
+
+
 
   // ============================================================================
   // PASTE HANDLERS
@@ -261,35 +268,36 @@ const handleWorkSelect = useCallback(async (work) => {
   }
 
   return (
-    <FullView
-      activeTab={activeTab}
-      onTabChange={setActiveTab}
-      searchQuery={searchQuery}
-      onSearchChange={setSearchQuery}
-      selectedAuthorFolder={selectedAuthorFolder}
-      filteredAuthors={filteredAuthors}
-      filteredWorks={filteredWorks}
-      onAuthorSelect={handleAuthorSelect}
-      onWorkSelect={handleWorkSelect}
-      onBackToAuthors={handleBackToAuthors}
-      selectedSourceId={selectedSourceId}
-      uploadedFile={uploadedFile}
-      onFileUpload={handleFileUpload}
-      onUploadedFileSelect={handleUploadedFileSelect}
-      onClearUpload={handleClearUpload}
-      pasteData={pasteData}
-      onPasteChange={handlePasteChange}
-      onPasteSubmit={handlePasteSubmit}
-      recentWorks={recentWorks}
-      filterOptions={filterOptions}
-      onFilterChange={handleFilterChange}
-      onClearFilters={clearFilters}
-      isLoadingAuthors={state.ui.isLoading?.authors}
-      isLoadingWorks={state.ui.isLoading?.works}
-      isLoadingWork={state.ui.isLoading?.work}
-      authors={authors}
-    />
-  );
+  <FullView
+    activeTab={activeTab}
+    onTabChange={setActiveTab}
+    searchQuery={searchQuery}
+    onSearchChange={setSearchQuery}
+    selectedAuthorFolder={selectedAuthorFolder}
+    filteredAuthors={filteredAuthors}
+    filteredWorks={filteredWorks}
+    onAuthorSelect={handleAuthorSelect}
+    onWorkSelect={handleWorkSelect}
+    onBackToAuthors={handleBackToAuthors}
+    selectedSourceId={selectedSourceId}
+    // REMOVE THIS LINE: uploadedFile={uploadedFile}
+    onFileUpload={handleFileUpload}
+    // REMOVE THESE LINES:
+    // onUploadedFileSelect={handleUploadedFileSelect}
+    // onClearUpload={handleClearUpload}
+    pasteData={pasteData}
+    onPasteChange={handlePasteChange}
+    onPasteSubmit={handlePasteSubmit}
+    recentWorks={recentWorks}
+    filterOptions={filterOptions}
+    onFilterChange={handleFilterChange}
+    onClearFilters={clearFilters}
+    isLoadingAuthors={state.ui.isLoading?.authors}
+    isLoadingWorks={state.ui.isLoading?.works}
+    isLoadingWork={state.ui.isLoading?.work}
+    authors={authors}
+  />
+);
 };
 
 // ============================================================================
@@ -374,10 +382,10 @@ const FullView = ({
   onWorkSelect,
   onBackToAuthors,
   selectedSourceId,
-  uploadedFile,
+  // REMOVE: uploadedFile,
   onFileUpload,
-  onUploadedFileSelect,
-  onClearUpload,
+  // REMOVE: onUploadedFileSelect,
+  // REMOVE: onClearUpload,
   pasteData,
   onPasteChange,
   onPasteSubmit,
@@ -439,13 +447,10 @@ const FullView = ({
       )}
 
       {activeTab === TABS.UPLOAD && (
-        <UploadTab
-          uploadedFile={uploadedFile}
-          onFileUpload={onFileUpload}
-          onUploadedFileSelect={onUploadedFileSelect}
-          onClearUpload={onClearUpload}
-        />
-      )}
+    <UploadTab
+      onFileUpload={onFileUpload}
+    />
+)}
 
       {activeTab === TABS.PASTE && (
         <PasteTab
@@ -741,22 +746,222 @@ const RecentTab = ({ recentWorks, onWorkSelect, selectedSourceId, isLoadingWork 
 // ============================================================================
 // UPLOAD TAB
 // ============================================================================
-const UploadTab = ({ uploadedFile, onFileUpload, onUploadedFileSelect, onClearUpload }) => (
-  <div className="space-y-4">
-    {!uploadedFile ? (
-      <>
-        <UploadDropzone onFileUpload={onFileUpload} />
-        <UploadInstructions />
-      </>
-    ) : (
-      <UploadSuccess
-        file={uploadedFile}
-        onClear={onClearUpload}
-        onUse={onUploadedFileSelect}
-      />
-    )}
-  </div>
-);
+const UploadTab = ({ onFileUpload }) => {
+  const [uploadForm, setUploadForm] = useState({
+    file: null,
+    authorFolder: '',
+    workTitle: '',
+    date: '',
+    isNewAuthor: false,
+    newAuthorName: ''
+  });
+  
+  const { getAuthorsForUpload } = useAppState();
+  const [authorOptions, setAuthorOptions] = useState([]);
+  const [loadingAuthors, setLoadingAuthors] = useState(false);
+
+  // Load author options
+  useEffect(() => {
+    const loadAuthors = async () => {
+      setLoadingAuthors(true);
+      try {
+        const authors = await getAuthorsForUpload();
+        setAuthorOptions(authors);
+      } catch (error) {
+        console.error('Failed to load authors:', error);
+      } finally {
+        setLoadingAuthors(false);
+      }
+    };
+    loadAuthors();
+  }, [getAuthorsForUpload]);
+
+  const handleFileSelect = (e) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      setUploadForm(prev => ({
+        ...prev,
+        file,
+        // Auto-extract work title from filename
+        workTitle: prev.workTitle || file.name.replace(/\.[^/.]+$/, '')
+      }));
+    }
+  };
+
+  const handleSubmit = () => {
+    if (!uploadForm.file) {
+      return;
+    }
+
+    const metadata = {
+      authorFolder: uploadForm.isNewAuthor 
+        ? uploadForm.newAuthorName.replace(/\s+/g, '_')
+        : uploadForm.authorFolder,
+      workTitle: uploadForm.workTitle,
+      date: uploadForm.date || new Date().getFullYear().toString(),
+      isNewAuthor: uploadForm.isNewAuthor
+    };
+
+    onFileUpload(uploadForm.file, metadata);
+  };
+
+  const isValid = uploadForm.file && 
+                  uploadForm.workTitle && 
+                  (uploadForm.isNewAuthor ? uploadForm.newAuthorName : uploadForm.authorFolder);
+
+  return (
+    <div className="space-y-4">
+      {/* File Selection */}
+      <div>
+        <label className="block text-sm font-semibold text-gray-700 mb-2">
+          Select File <span className="text-red-500">*</span>
+        </label>
+        <label className="block cursor-pointer">
+          <div className={`
+            border-2 border-dashed rounded-xl p-8 text-center transition-all
+            ${uploadForm.file 
+              ? 'border-green-400 bg-green-50' 
+              : 'border-gray-300 hover:border-blue-400 hover:bg-blue-50/30'
+            }
+          `}>
+            {uploadForm.file ? (
+              <>
+                <Check className="w-12 h-12 mx-auto mb-3 text-green-600" />
+                <p className="text-sm font-semibold text-gray-900 mb-1">
+                  {uploadForm.file.name}
+                </p>
+                <p className="text-xs text-gray-500">
+                  {(uploadForm.file.size / 1024).toFixed(1)} KB
+                </p>
+              </>
+            ) : (
+              <>
+                <Upload className="w-12 h-12 mx-auto mb-3 text-gray-400" />
+                <p className="text-sm font-semibold text-gray-900 mb-1">
+                  Click to upload
+                </p>
+                <p className="text-xs text-gray-500">
+                  Plain text files (.txt) • Max 10MB
+                </p>
+              </>
+            )}
+          </div>
+          <input
+            type="file"
+            accept=".txt,text/plain"
+            onChange={handleFileSelect}
+            className="hidden"
+          />
+        </label>
+      </div>
+
+      {uploadForm.file && (
+        <>
+          {/* Author Selection */}
+          <div>
+            <label className="flex items-center gap-2 mb-2">
+              <input
+                type="checkbox"
+                checked={uploadForm.isNewAuthor}
+                onChange={(e) => setUploadForm(prev => ({
+                  ...prev,
+                  isNewAuthor: e.target.checked,
+                  authorFolder: '',
+                  newAuthorName: ''
+                }))}
+                className="w-4 h-4 text-blue-600 rounded"
+              />
+              <span className="text-sm font-semibold text-gray-700">
+                Create new author
+              </span>
+            </label>
+
+            {uploadForm.isNewAuthor ? (
+              <input
+                type="text"
+                value={uploadForm.newAuthorName}
+                onChange={(e) => setUploadForm(prev => ({
+                  ...prev,
+                  newAuthorName: e.target.value
+                }))}
+                placeholder="Enter author name (e.g., Christopher Marlowe)"
+                className="w-full px-4 py-2.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500"
+              />
+            ) : (
+              <select
+                value={uploadForm.authorFolder}
+                onChange={(e) => setUploadForm(prev => ({
+                  ...prev,
+                  authorFolder: e.target.value
+                }))}
+                className="w-full px-4 py-2.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500"
+                disabled={loadingAuthors}
+              >
+                <option value="">Select existing author...</option>
+                {authorOptions.map(author => (
+                  <option key={author.value} value={author.value}>
+                    {author.label} ({author.workCount} works)
+                  </option>
+                ))}
+              </select>
+            )}
+          </div>
+
+          {/* Work Title */}
+          <div>
+            <label className="block text-sm font-semibold text-gray-700 mb-2">
+              Work Title <span className="text-red-500">*</span>
+            </label>
+            <input
+              type="text"
+              value={uploadForm.workTitle}
+              onChange={(e) => setUploadForm(prev => ({
+                ...prev,
+                workTitle: e.target.value
+              }))}
+              placeholder="e.g., Doctor Faustus"
+              className="w-full px-4 py-2.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500"
+            />
+          </div>
+
+          {/* Date */}
+          <div>
+            <label className="block text-sm font-semibold text-gray-700 mb-2">
+              Publication Date <span className="text-gray-400 font-normal">(optional)</span>
+            </label>
+            <input
+              type="text"
+              value={uploadForm.date}
+              onChange={(e) => setUploadForm(prev => ({
+                ...prev,
+                date: e.target.value
+              }))}
+              placeholder="e.g., 1604"
+              className="w-full px-4 py-2.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500"
+            />
+          </div>
+
+          {/* Submit Button */}
+          <button
+            onClick={handleSubmit}
+            disabled={!isValid}
+            className={`
+              w-full px-6 py-3 text-sm font-bold rounded-xl transition-all
+              ${isValid
+                ? 'text-white bg-gradient-to-r from-blue-600 to-indigo-600 hover:shadow-lg'
+                : 'text-gray-400 bg-gray-100 cursor-not-allowed'
+              }
+            `}
+          >
+            Upload to Corpus
+          </button>
+        </>
+      )}
+
+      <UploadInstructions />
+    </div>
+  );
+};
 
 const UploadDropzone = ({ onFileUpload }) => (
   <label className="block cursor-pointer">

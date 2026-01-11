@@ -137,7 +137,7 @@ const WorkspaceHeader = ({
 // EMPTY STATE COMPONENT
 // ============================================================================
 
-const EmptyWorkspaceState = ({ onSourceSelect }) => {
+const EmptyWorkspaceState = () => {
   return (
     <div className="min-h-[600px] flex items-center justify-center">
       <div className="max-w-5xl w-full">
@@ -149,14 +149,12 @@ const EmptyWorkspaceState = ({ onSourceSelect }) => {
             Welcome to Segmentation Workspace
           </h2>
           <p className="text-lg text-gray-600 max-w-2xl mx-auto">
-            Select a text from your corpus library or upload your own to begin creating segments for cipher analysis
+            Select a text from your corpus library, upload a new work, or paste text to begin creating segments for cipher analysis
           </p>
         </div>
 
-        <SourcePicker 
-          onSourceSelect={onSourceSelect}
-          selectedSourceId={null}
-        />
+        {/* SourcePicker with NO props - it handles everything internally */}
+        <SourcePicker />
 
         {/* Feature Highlights */}
         <div className="mt-12 grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -201,7 +199,6 @@ const FeatureCard = ({ icon, title, description }) => (
 
 const QuickStartWizard = ({ onDismiss, onSelectMode }) => {
   const [showWizard, setShowWizard] = useState(() => {
-    // Check if user has seen wizard before
     const hasSeenWizard = localStorage.getItem('merlin_workspace_wizard_seen');
     return !hasSeenWizard;
   });
@@ -301,15 +298,12 @@ const WorkspaceView = () => {
   const { workspace, ui } = state;
   const { currentSource, segments, boundaries } = workspace;
 
-  // State for multi-edition mode detection
-  const [workflowMode, setWorkflowMode] = useState(null); // 'single' | 'multi'
+  const [workflowMode, setWorkflowMode] = useState(null);
 
-  // Calculate segment count (for multi-edition, sum across all editions)
   const segmentCount = useMemo(() => {
     if (!segments) return 0;
     if (Array.isArray(segments)) return segments.length;
     
-    // If segments is an object (multi-edition format)
     if (typeof segments === 'object') {
       return Object.values(segments).reduce((sum, editionSegments) => {
         return sum + (Array.isArray(editionSegments) ? editionSegments.length : 0);
@@ -319,39 +313,19 @@ const WorkspaceView = () => {
     return 0;
   }, [segments]);
 
-  // FIXED: Detect if we're in multi-edition mode
   const isMultiEdition = useMemo(() => {
-    // Check both edition_count (from backend) and editions array
     const hasMultipleEditions = (currentSource?.edition_count || 0) > 1 || 
                                 (currentSource?.editions?.length || 0) > 1;
     
     return workflowMode === 'multi' || hasMultipleEditions;
   }, [workflowMode, currentSource]);
 
-  // FIXED: Get edition count from multiple possible sources
   const editionCount = useMemo(() => {
     return currentSource?.edition_count || 
            currentSource?.editions?.length || 
            1;
   }, [currentSource]);
 
-  // Handle source selection
-  const handleSourceSelect = useCallback(async (work) => {
-    // Check if this work has multiple editions available
-    // In real implementation, would query backend for available editions
-    // For now, treat as single edition
-    
-    dispatch({
-      type: ACTIONS.ADD_NOTIFICATION,
-      payload: {
-        type: 'success',
-        message: `Loaded: ${work.title}`,
-        duration: 2000
-      }
-    });
-  }, [dispatch]);
-
-  // Handle changing source text
   const handleChangeText = useCallback(() => {
     if (ui.hasUnsavedChanges) {
       if (!window.confirm('You have unsaved changes. Are you sure you want to change the source text?')) {
@@ -365,7 +339,6 @@ const WorkspaceView = () => {
     addNotification('info', 'Workspace cleared');
   }, [ui.hasUnsavedChanges, dispatch, addNotification]);
 
-  // Handle navigation to analysis view
   const handleNavigateToAnalysis = useCallback(() => {
     if (segments?.length === 0) {
       addNotification('warning', 'Create segments before analyzing');
@@ -380,10 +353,8 @@ const WorkspaceView = () => {
     dispatch({ type: ACTIONS.SET_ACTIVE_VIEW, payload: 'analyze' });
   }, [segments, ui.hasUnsavedChanges, dispatch, addNotification]);
 
-  // Keyboard shortcuts
   useEffect(() => {
     const handleKeyPress = (e) => {
-      // Ctrl/Cmd + S to save
       if ((e.ctrlKey || e.metaKey) && e.key === 's') {
         e.preventDefault();
         if (currentSource && segments?.length > 0) {
@@ -391,7 +362,6 @@ const WorkspaceView = () => {
         }
       }
       
-      // Ctrl/Cmd + Enter to analyze
       if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
         e.preventDefault();
         if (currentSource && segments?.length > 0 && !ui.hasUnsavedChanges) {
@@ -420,9 +390,8 @@ const WorkspaceView = () => {
             editionCount={1}
           />
           
-          <EmptyWorkspaceState onSourceSelect={handleSourceSelect} />
+          <EmptyWorkspaceState />
           
-          {/* Quick Start Wizard */}
           <QuickStartWizard
             onSelectMode={setWorkflowMode}
             onDismiss={() => {}}
@@ -447,10 +416,8 @@ const WorkspaceView = () => {
           editionCount={editionCount}
         />
 
-        {/* Keyboard Shortcuts Help */}
         <KeyboardShortcutsHint />
 
-        {/* Enhanced Segmentation Tool */}
         <EnhancedSegmentationTool
           onBack={handleChangeText}
           saveSegmentation={saveSegmentation}
@@ -533,10 +500,6 @@ const ShortcutItem = ({ keys, description }) => (
     <span className="text-xs text-blue-800">{description}</span>
   </div>
 );
-
-// ============================================================================
-// EXPORTS
-// ============================================================================
 
 export default WorkspaceView;
 export { WorkspaceHeader, EmptyWorkspaceState, QuickStartWizard };

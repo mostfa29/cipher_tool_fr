@@ -443,6 +443,10 @@ const EditionComparisonPanel = ({ editions, selectedEditions, editionAnnotations
   );
 };
 
+// ============================================================================
+// OPTIMIZED TEXT ANNOTATOR WITH VIRTUALIZATION
+// ============================================================================
+
 const TextAnnotator = ({ 
   text, 
   annotations, 
@@ -462,95 +466,257 @@ const TextAnnotator = ({
   const [selectionBox, setSelectionBox] = useState(null);
   const [tempSelection, setTempSelection] = useState(null);
   const [hoveredId, setHoveredId] = useState(null);
-  const [charRects, setCharRects] = useState([]);
+  const [charRects, setCharRects] = useState(new Map());
   const [mergeSource, setMergeSource] = useState(null);
+  
+  // ========================================================================
+  // VIRTUALIZATION STATE
+  // ========================================================================
+  const [scrollPosition, setScrollPosition] = useState(0);
+  const [containerHeight, setContainerHeight] = useState(0);
+  const scrollLockRef = useRef(false); // Prevent scroll loops
+  const measurementInProgressRef = useRef(false); // Track measurement state
+  // Configuration
+  const CHAR_HEIGHT = 20; // Approximate line height in pixels
+  const CHARS_PER_LINE = 80; // Estimate
+  const BUFFER_LINES = 30; // Extra lines to render above/below viewport
+  const MEASUREMENT_THROTTLE = 150; // ms
+  const SCROLL_THROTTLE = 100; // ms
+  
+  // Large text detection
+  const USE_VIRTUALIZATION = text.length > 100000; // 100K chars threshold
+  
+  // ========================================================================
+  // CALCULATE VISIBLE RANGE
+  // ========================================================================
+  const visibleRange = useMemo(() => {
+  if (!USE_VIRTUALIZATION) {
+    return { startChar: 0, endChar: text.length, startLine: 0, endLine: Infinity };
+  }
+  
+  const viewportHeight = containerHeight || 800;
+  
+  // Calculate approximate line numbers
+  const startLine = Math.max(0, Math.floor(scrollPosition / CHAR_HEIGHT) - BUFFER_LINES);
+  const endLine = Math.ceil((scrollPosition + viewportHeight) / CHAR_HEIGHT) + BUFFER_LINES;
+  
+  // Convert to character positions
+  const startChar = Math.max(0, startLine * CHARS_PER_LINE);
+  const endChar = Math.min(text.length, endLine * CHARS_PER_LINE);
+  
+  return { startChar, endChar, startLine, endLine };
+}, [scrollPosition, containerHeight, text.length, USE_VIRTUALIZATION]);
 
-  // Measure character positions
-  useEffect(() => {
-    if (!textRef.current) return;
+  // ========================================================================
+  // VISIBLE TEXT AND ANNOTATIONS
+  // ========================================================================
+  const visibleText = useMemo(() => {
+    if (!USE_VIRTUALIZATION) {
+      return text;
+    }
     
-    const measureChars = () => {
-      const rects = [];
-      const range = document.createRange();
-      const textNode = textRef.current.firstChild;
-      
-      if (textNode && textNode.nodeType === Node.TEXT_NODE) {
-        for (let i = 0; i < text.length; i++) {
-          try {
-            range.setStart(textNode, i);
-            range.setEnd(textNode, i + 1);
-            const rect = range.getBoundingClientRect();
-            const containerRect = containerRef.current.getBoundingClientRect();
-            rects.push({
-              left: rect.left - containerRect.left + containerRef.current.scrollLeft,
-              top: rect.top - containerRect.top + containerRef.current.scrollTop,
-              width: rect.width,
-              height: rect.height
-            });
-          } catch (e) {
-            rects.push({ left: 0, top: 0, width: 0, height: 0 });
+    return text.slice(visibleRange.startChar, visibleRange.endChar);
+  }, [text, visibleRange, USE_VIRTUALIZATION]);
+  
+  const visibleAnnotations = useMemo(() => {
+    if (!USE_VIRTUALIZATION) {
+      return annotations;
+    }
+    
+    const { startChar, endChar } = visibleRange;
+    
+    return annotations.filter(ann => {
+      // Include annotation if it overlaps with visible range
+      return (ann.start >= startChar && ann.start <= endChar) ||
+             (ann.end >= startChar && ann.end <= endChar) ||
+             (ann.start <= startChar && ann.end >= endChar);
+    });
+  }, [annotations, visibleRange, USE_VIRTUALIZATION]);
+  
+  // ========================================================================
+  // THROTTLED SCROLL HANDLER
+  // ========================================================================
+  useEffect(() => {
+  const container = containerRef.current;
+  if (!container || !USE_VIRTUALIZATION) return;
+  
+  let scrollTimeout;
+  let measureTimeout;
+  let lastScrollTop = container.scrollTop;
+  
+  const handleScroll = () => {
+    // Prevent handling scroll events triggered by our own updates
+    if (scrollLockRef.current || measurementInProgressRef.current) {
+      return;
+    }
+    
+    const currentScrollTop = container.scrollTop;
+    
+    // Ignore if scroll position hasn't actually changed
+    if (Math.abs(currentScrollTop - lastScrollTop) < 5) {
+      return;
+    }
+    
+    lastScrollTop = currentScrollTop;
+    
+    // Update scroll position (throttled)
+    clearTimeout(scrollTimeout);
+    scrollTimeout = setTimeout(() => {
+      if (!scrollLockRef.current) {
+        setScrollPosition(currentScrollTop);
+      }
+    }, SCROLL_THROTTLE);
+    
+    // Don't clear measurements during scroll for better UX
+    // Just let them stay until scroll settles
+  };
+  
+  const handleResize = () => {
+    setContainerHeight(container.clientHeight);
+  };
+  
+  container.addEventListener('scroll', handleScroll, { passive: true });
+  window.addEventListener('resize', handleResize);
+  
+  // Initial height
+  setContainerHeight(container.clientHeight);
+  
+  return () => {
+    container.removeEventListener('scroll', handleScroll);
+    window.removeEventListener('resize', handleResize);
+    clearTimeout(scrollTimeout);
+    clearTimeout(measureTimeout);
+  };
+}, [USE_VIRTUALIZATION]);
+
+
+// ========================================================================
+// TEMP SELECTION RENDERING - USE GLOBAL INDICES
+// ========================================================================
+// In the render section, replace the temporary selection highlight code:
+
+{/* Temporary selection highlight */}
+{tempSelection && charRects.size > 0 && (
+  <div>
+    {(() => {
+      const boxes = [];
+      let currentBox = null;
+
+      // ✅ FIX: tempSelection already has GLOBAL indices
+      for (let i = tempSelection.start; i < tempSelection.end; i++) {
+        const rect = charRects.get(i); // Using global index
+        if (!rect) continue;
+
+        if (!currentBox) {
+          currentBox = { ...rect };
+        } else {
+          if (Math.abs(rect.top - currentBox.top) < 10) {
+            currentBox.width = (rect.left + rect.width) - currentBox.left;
+            currentBox.height = Math.max(currentBox.height, rect.height);
+          } else {
+            boxes.push(currentBox);
+            currentBox = { ...rect };
           }
         }
       }
-      setCharRects(rects);
-    };
+      if (currentBox) boxes.push(currentBox);
+
+      return boxes.map((box, idx) => (
+        <div
+          key={`temp-${idx}`}
+          style={{
+            position: 'absolute',
+            left: `${box.left - 3}px`,
+            top: `${box.top - 3}px`,
+            width: `${box.width + 6}px`,
+            height: `${box.height + 6}px`,
+            backgroundColor: '#3B82F6',
+            opacity: 0.3,
+            border: '2px dashed #2563EB',
+            borderRadius: '4px',
+            pointerEvents: 'none',
+            zIndex: 5000
+          }}
+        />
+      ));
+    })()}
+  </div>
+)}
+// ========================================================================
+// HANDLE MOUSE MOVE FOR SELECTION - FIXED WITH DEBUGGING
+// ========================================================================
+const handleMouseMove = useCallback((e) => {
+  if (!isSelecting || !selectionBox) return;
+
+  const containerRect = containerRef.current.getBoundingClientRect();
+  const endX = e.clientX - containerRect.left + containerRef.current.scrollLeft;
+  const endY = e.clientY - containerRect.top + containerRef.current.scrollTop;
+
+  setSelectionBox(prev => ({ ...prev, endX, endY }));
+
+  if (charRects.size > 0) {
+    const minX = Math.min(selectionBox.startX, endX);
+    const maxX = Math.max(selectionBox.startX, endX);
+    const minY = Math.min(selectionBox.startY, endY);
+    const maxY = Math.max(selectionBox.startY, endY);
+
+    let start = -1;
+    let end = -1;
     
-    const timer = setTimeout(measureChars, 100);
-    window.addEventListener('resize', measureChars);
-    return () => {
-      clearTimeout(timer);
-      window.removeEventListener('resize', measureChars);
-    };
-  }, [text, annotations.length]);
+    // Sort indices to ensure we get min and max correctly
+    const selectedIndices = [];
 
-  // Handle mouse move for selection
-  const handleMouseMove = useCallback((e) => {
-    if (!isSelecting || !selectionBox) return;
+    // Iterate through measured characters
+    for (const [globalIdx, rect] of charRects.entries()) {
+      const charCenterX = rect.left + rect.width / 2;
+      const charCenterY = rect.top + rect.height / 2;
 
-    const containerRect = containerRef.current.getBoundingClientRect();
-    const endX = e.clientX - containerRect.left + containerRef.current.scrollLeft;
-    const endY = e.clientY - containerRect.top + containerRef.current.scrollTop;
-
-    setSelectionBox(prev => ({ ...prev, endX, endY }));
-
-    if (charRects.length > 0) {
-      const minX = Math.min(selectionBox.startX, endX);
-      const maxX = Math.max(selectionBox.startX, endX);
-      const minY = Math.min(selectionBox.startY, endY);
-      const maxY = Math.max(selectionBox.startY, endY);
-
-      let start = -1;
-      let end = -1;
-
-      for (let i = 0; i < charRects.length; i++) {
-        const rect = charRects[i];
-        const charCenterX = rect.left + rect.width / 2;
-        const charCenterY = rect.top + rect.height / 2;
-
-        if (charCenterX >= minX && charCenterX <= maxX &&
-            charCenterY >= minY && charCenterY <= maxY) {
-          if (start === -1) start = i;
-          end = i + 1;
-        }
-      }
-
-      if (start !== -1 && end !== -1 && end > start) {
-        setTempSelection({ start, end });
-      } else {
-        setTempSelection(null);
+      if (charCenterX >= minX && charCenterX <= maxX &&
+          charCenterY >= minY && charCenterY <= maxY) {
+        selectedIndices.push(globalIdx);
       }
     }
-  }, [isSelecting, selectionBox, charRects]);
 
-  // Handle mouse up - create annotation
-  // In the handleMouseUp callback of TextAnnotator component, replace it with:
+    if (selectedIndices.length > 0) {
+      selectedIndices.sort((a, b) => a - b);
+      start = selectedIndices[0];
+      end = selectedIndices[selectedIndices.length - 1] + 1;
+      
+      console.log('Selection:', { start, end, count: selectedIndices.length });
+      setTempSelection({ start, end });
+    } else {
+      setTempSelection(null);
+    }
+  }
+}, [isSelecting, selectionBox, charRects]);
 
+// ========================================================================
+// HANDLE MOUSE UP - CREATE ANNOTATION WITH DEBUGGING
+// ========================================================================
 const handleMouseUp = useCallback(() => {
+  console.log('Mouse up:', { isSelecting, tempSelection });
+  
   if (isSelecting && tempSelection && tempSelection.end - tempSelection.start > 0) {
+    console.log('Creating annotation:', tempSelection);
+    
+    // Validate indices
+    if (tempSelection.start < 0 || tempSelection.end > text.length) {
+      console.error('Invalid selection indices:', {
+        start: tempSelection.start,
+        end: tempSelection.end,
+        textLength: text.length
+      });
+      setSelectionBox(null);
+      setTempSelection(null);
+      setIsSelecting(false);
+      return;
+    }
+    
     const selectedText = text.slice(tempSelection.start, tempSelection.end);
+    console.log('Selected text:', selectedText.substring(0, 100));
+    
     const label = selectedText.length > 50 ? selectedText.slice(0, 50) + '...' : selectedText;
     
-    // Check if this new annotation is nested within existing ones
     const containingAnnotations = annotations.filter(ann => 
       ann.start <= tempSelection.start && ann.end >= tempSelection.end
     );
@@ -563,19 +729,114 @@ const handleMouseUp = useCallback(() => {
       label: label,
       text: selectedText,
       isNested: isNested,
-      parentIds: containingAnnotations.map(a => a.id) // Track parent annotations
+      parentIds: containingAnnotations.map(a => a.id)
     });
     
-    // Show notification about nesting
     if (isNested) {
       console.log(`✨ Created nested annotation (Level ${containingAnnotations.length})`);
     }
+  } else {
+    console.log('No valid selection to create');
   }
+  
   setSelectionBox(null);
   setTempSelection(null);
   setIsSelecting(false);
 }, [isSelecting, tempSelection, onAnnotationAdd, text, annotations]);
 
+// ========================================================================
+// OPTIMIZED CHARACTER MEASUREMENT - WITH BETTER LOGGING
+// ========================================================================
+useEffect(() => {
+  if (!textRef.current || visibleAnnotations.length === 0) {
+    setCharRects(new Map());
+    return;
+  }
+  
+  const measureVisibleChars = () => {
+    const rects = new Map();
+    const range = document.createRange();
+    const textNode = textRef.current.firstChild;
+    
+    if (!textNode || textNode.nodeType !== Node.TEXT_NODE) {
+      console.warn('No text node found for measurement');
+      return;
+    }
+    
+    const textOffset = USE_VIRTUALIZATION ? visibleRange.startChar : 0;
+    
+    console.log('Measuring chars:', {
+      useVirtualization: USE_VIRTUALIZATION,
+      textOffset,
+      visibleTextLength: visibleText.length,
+      visibleAnnotations: visibleAnnotations.length
+    });
+    
+    // ALWAYS measure some characters even if no annotations, for selection to work
+    if (visibleAnnotations.length === 0) {
+      // Measure a sample of characters for selection
+      const sampleSize = Math.min(1000, visibleText.length);
+      for (let i = 0; i < sampleSize; i += 10) {
+        const globalIndex = i + textOffset;
+        
+        try {
+          range.setStart(textNode, i);
+          range.setEnd(textNode, i + 1);
+          const rect = range.getBoundingClientRect();
+          const containerRect = containerRef.current.getBoundingClientRect();
+          
+          rects.set(globalIndex, {
+            left: rect.left - containerRect.left + containerRef.current.scrollLeft,
+            top: rect.top - containerRect.top + containerRef.current.scrollTop,
+            width: rect.width,
+            height: rect.height
+          });
+        } catch (e) {
+          // Skip
+        }
+      }
+    } else {
+      // Measure characters around annotations
+      const MARGIN = 50;
+      
+      visibleAnnotations.forEach(ann => {
+        const localStart = ann.start - textOffset;
+        const localEnd = ann.end - textOffset;
+        
+        const measureStart = Math.max(0, localStart - MARGIN);
+        const measureEnd = Math.min(visibleText.length, localEnd + MARGIN);
+        
+        for (let i = measureStart; i < measureEnd; i++) {
+          const globalIndex = i + textOffset;
+          
+          if (rects.has(globalIndex)) continue;
+          
+          try {
+            range.setStart(textNode, i);
+            range.setEnd(textNode, i + 1);
+            const rect = range.getBoundingClientRect();
+            const containerRect = containerRef.current.getBoundingClientRect();
+            
+            rects.set(globalIndex, {
+              left: rect.left - containerRect.left + containerRef.current.scrollLeft,
+              top: rect.top - containerRect.top + containerRef.current.scrollTop,
+              width: rect.width,
+              height: rect.height
+            });
+          } catch (e) {
+            // Skip
+          }
+        }
+      });
+    }
+    
+    console.log(`Measured ${rects.size} character positions`);
+    setCharRects(rects);
+  };
+  
+  const timer = setTimeout(measureVisibleChars, MEASUREMENT_THROTTLE);
+  return () => clearTimeout(timer);
+}, [visibleText, visibleAnnotations, visibleRange, USE_VIRTUALIZATION]);
   useEffect(() => {
     if (isSelecting) {
       window.addEventListener('mousemove', handleMouseMove);
@@ -587,21 +848,24 @@ const handleMouseUp = useCallback(() => {
     }
   }, [isSelecting, handleMouseMove, handleMouseUp]);
 
-  // Calculate annotation boxes
+  // ========================================================================
+  // CALCULATE ANNOTATION BOXES - ONLY FOR VISIBLE ANNOTATIONS
+  // ========================================================================
   const annotationBoxes = useMemo(() => {
-    if (charRects.length === 0) return [];
+    if (charRects.size === 0) return [];
 
-    const withLevels = annotations.map(ann => ({
-      ...ann,
-      level: calculateLevel(ann, annotations)
-    }));
+    const textOffset = USE_VIRTUALIZATION ? visibleRange.startChar : 0;
 
-    return withLevels.map(annotation => {
+    return visibleAnnotations.map(annotation => {
       const boxes = [];
       let currentBox = null;
 
-      for (let i = annotation.start; i < Math.min(annotation.end, charRects.length); i++) {
-        const rect = charRects[i];
+      const startIdx = annotation.start;
+      const endIdx = annotation.end;
+
+      for (let i = startIdx; i < endIdx; i++) {
+        const rect = charRects.get(i);
+        if (!rect) continue;
 
         if (!currentBox) {
           currentBox = { ...rect, startChar: i, endChar: i + 1 };
@@ -620,9 +884,11 @@ const handleMouseUp = useCallback(() => {
       if (currentBox) boxes.push(currentBox);
       return { annotation, boxes };
     });
-  }, [annotations, charRects]);
+  }, [visibleAnnotations, charRects, USE_VIRTUALIZATION, visibleRange]);
 
-  // Handle annotation click
+  // ========================================================================
+  // HANDLE ANNOTATION CLICK
+  // ========================================================================
   const handleAnnotationClick = useCallback((e, annId) => {
     if (!isEnabled) return;
     
@@ -650,29 +916,156 @@ const handleMouseUp = useCallback(() => {
     }
   }, [isEnabled, mode, selectedId, mergeSource, onSelect, onAnnotationDelete, onAnnotationMerge, onModeComplete]);
 
-  // Handle mouse down for new selection
-  const handleMouseDown = useCallback((e) => {
-    if (!isEnabled || e.button !== 0) return;
+// ========================================================================
+// OPTIMIZED CHARACTER MEASUREMENT - MEASURE DENSELY FOR SELECTION
+// ========================================================================
+useEffect(() => {
+  if (!textRef.current) {
+    setCharRects(new Map());
+    return;
+  }
+  
+  const measureVisibleChars = () => {
+    // Lock scroll during measurement
+    measurementInProgressRef.current = true;
+    scrollLockRef.current = true;
     
-    const target = e.target;
-    const annotationId = target.dataset.annotation || target.parentElement?.dataset.annotation;
+    const rects = new Map();
+    const range = document.createRange();
+    const textNode = textRef.current.firstChild;
     
-    if (annotationId) {
-      handleAnnotationClick(e, annotationId);
+    if (!textNode || textNode.nodeType !== Node.TEXT_NODE) {
+      console.warn('No text node found for measurement');
+      measurementInProgressRef.current = false;
+      scrollLockRef.current = false;
       return;
     }
-
-    // Only allow new selections in SELECT mode
-    if (mode !== MODES.SELECT) return;
-
-    setIsSelecting(true);
-    const containerRect = containerRef.current.getBoundingClientRect();
-    const startX = e.clientX - containerRect.left + containerRef.current.scrollLeft;
-    const startY = e.clientY - containerRect.top + containerRef.current.scrollTop;
     
-    setSelectionBox({ startX, startY, endX: startX, endY: startY });
-  }, [isEnabled, mode, handleAnnotationClick]);
+    const textOffset = USE_VIRTUALIZATION ? visibleRange.startChar : 0;
+    
+    console.log('Measuring chars:', {
+      useVirtualization: USE_VIRTUALIZATION,
+      textOffset,
+      visibleTextLength: visibleText.length,
+      visibleAnnotations: visibleAnnotations.length,
+      isSelecting
+    });
+    
+    try {
+      // If actively selecting OR no annotations yet, measure densely
+      if (isSelecting || visibleAnnotations.length === 0) {
+        // Measure EVERY character in visible range (or first 5000 for performance)
+        const measureEnd = Math.min(visibleText.length, USE_VIRTUALIZATION ? 5000 : visibleText.length);
+        
+        console.log(`Measuring densely: 0 to ${measureEnd}`);
+        
+        for (let i = 0; i < measureEnd; i++) {
+          const globalIndex = i + textOffset;
+          
+          if (rects.has(globalIndex)) continue;
+          
+          try {
+            range.setStart(textNode, i);
+            range.setEnd(textNode, i + 1);
+            const rect = range.getBoundingClientRect();
+            
+            // Don't measure if container not found
+            if (!containerRef.current) continue;
+            
+            const containerRect = containerRef.current.getBoundingClientRect();
+            
+            rects.set(globalIndex, {
+              left: rect.left - containerRect.left + containerRef.current.scrollLeft,
+              top: rect.top - containerRect.top + containerRef.current.scrollTop,
+              width: rect.width,
+              height: rect.height
+            });
+          } catch (e) {
+            // Skip measurement errors
+          }
+        }
+      } else {
+        // Measure characters around existing annotations
+        const MARGIN = 50;
+        
+        visibleAnnotations.forEach(ann => {
+          const localStart = ann.start - textOffset;
+          const localEnd = ann.end - textOffset;
+          
+          const measureStart = Math.max(0, localStart - MARGIN);
+          const measureEnd = Math.min(visibleText.length, localEnd + MARGIN);
+          
+          for (let i = measureStart; i < measureEnd; i++) {
+            const globalIndex = i + textOffset;
+            
+            if (rects.has(globalIndex)) continue;
+            
+            try {
+              range.setStart(textNode, i);
+              range.setEnd(textNode, i + 1);
+              const rect = range.getBoundingClientRect();
+              
+              if (!containerRef.current) continue;
+              
+              const containerRect = containerRef.current.getBoundingClientRect();
+              
+              rects.set(globalIndex, {
+                left: rect.left - containerRect.left + containerRef.current.scrollLeft,
+                top: rect.top - containerRect.top + containerRef.current.scrollTop,
+                width: rect.width,
+                height: rect.height
+              });
+            } catch (e) {
+              // Skip
+            }
+          }
+        });
+      }
+      
+      console.log(`✅ Measured ${rects.size} character positions`);
+      setCharRects(rects);
+    } finally {
+      // Unlock scroll after measurement completes
+      setTimeout(() => {
+        measurementInProgressRef.current = false;
+        scrollLockRef.current = false;
+      }, 100);
+    }
+  };
+  
+  const timer = setTimeout(measureVisibleChars, isSelecting ? 0 : MEASUREMENT_THROTTLE);
+  return () => clearTimeout(timer);
+}, [visibleText, visibleAnnotations, visibleRange, USE_VIRTUALIZATION, isSelecting]);
 
+// ========================================================================
+// HANDLE MOUSE DOWN - TRIGGER MEASUREMENT IMMEDIATELY
+// ========================================================================
+const handleMouseDown = useCallback((e) => {
+  if (!isEnabled || e.button !== 0) return;
+  
+  const target = e.target;
+  const annotationId = target.dataset.annotation || target.parentElement?.dataset.annotation;
+  
+  if (annotationId) {
+    handleAnnotationClick(e, annotationId);
+    return;
+  }
+
+  if (mode !== MODES.SELECT) return;
+
+  console.log('Starting selection...');
+  setIsSelecting(true);
+  
+  // Force immediate measurement by clearing charRects
+  // This will trigger the useEffect to re-measure densely
+  setCharRects(new Map());
+  
+  const containerRect = containerRef.current.getBoundingClientRect();
+  const startX = e.clientX - containerRect.left + containerRef.current.scrollLeft;
+  const startY = e.clientY - containerRect.top + containerRef.current.scrollTop;
+  
+  setSelectionBox({ startX, startY, endX: startX, endY: startY });
+}, [isEnabled, mode, handleAnnotationClick]);
   const getCursor = () => {
     if (!isEnabled) return 'not-allowed';
     if (isSelecting) return 'crosshair';
@@ -681,211 +1074,243 @@ const handleMouseUp = useCallback(() => {
     return 'text';
   };
 
+  // ========================================================================
+  // CALCULATE PADDING FOR VIRTUALIZATION
+  // ========================================================================
+const paddingTop = useMemo(() => {
+  if (!USE_VIRTUALIZATION) return 0;
+  return Math.floor(visibleRange.startChar / CHARS_PER_LINE) * CHAR_HEIGHT;
+}, [USE_VIRTUALIZATION, visibleRange.startChar]);
+const totalHeight = useMemo(() => {
+  if (!USE_VIRTUALIZATION) return 'auto';
+  return Math.ceil(text.length / CHARS_PER_LINE) * CHAR_HEIGHT;
+}, [USE_VIRTUALIZATION, text.length]);
   return (
     <div 
       ref={containerRef}
-      onMouseDown={handleMouseDown}
-      style={{ 
-        position: 'relative', 
-        minHeight: '400px',
-        cursor: getCursor(),
-        userSelect: 'none',
-        opacity: isEnabled ? 1 : 0.5,
+    onMouseDown={handleMouseDown}
+    style={{ 
+      position: 'relative', 
+      minHeight: '400px',
+      maxHeight: '800px',
+      overflowY: 'auto',
+      overflowX: 'hidden', // Prevent horizontal scroll
+      cursor: getCursor(),
+      userSelect: 'none',
+      opacity: isEnabled ? 1 : 0.5,
+    }}
+    >
+      {/* Spacer for virtualization */}
+      {USE_VIRTUALIZATION && paddingTop > 0 && (
+      <div 
+        style={{ 
+          height: `${paddingTop}px`,
+          flexShrink: 0 // Prevent shrinking
+        }} 
+      />
+    )}
+
+          <div
+      ref={textRef}
+      style={{
+        fontFamily: 'Georgia, serif',
+        fontSize: '18px',
+        lineHeight: '2.2',
+        whiteSpace: 'pre-wrap',
+        color: '#111827',
+        position: 'relative',
+        zIndex: 2,
+        pointerEvents: 'none',
       }}
     >
+      {visibleText}
+    </div>
+    
+    {/* Spacer after text for total height */}
+    {USE_VIRTUALIZATION && (
+      <div 
+        style={{ 
+          height: `${Math.max(0, totalHeight - paddingTop - (visibleText.length / CHARS_PER_LINE * CHAR_HEIGHT))}px`,
+          flexShrink: 0
+        }} 
+      />
+    )}
 
+      {/* Annotation overlays - only visible ones */}
+      {charRects.size > 0 && isEnabled && (
+        <div style={{ 
+          position: 'absolute', 
+          top: USE_VIRTUALIZATION ? `${paddingTop}px` : 0, 
+          left: 0, 
+          right: 0, 
+          bottom: 0, 
+          pointerEvents: 'none', 
+          zIndex: 1 
+        }}>
+          {annotationBoxes.map(({ annotation, boxes }) => {
+            const isSelected = selectedId === annotation.id;
+            const isHovered = hoveredId === annotation.id;
+            const isMergeSource = mergeSource === annotation.id;
+            const level = calculateLevel(annotation, annotations);
+            
+            const basePadding = 3;
+            const levelPadding = level * 5;
+            const padding = basePadding + levelPadding;
+            
+            const colors = getAnnotationColor(annotation, annotations);
+            
+            let opacity = 0.3 + (level * 0.05);
+            if (isSelected) opacity = 0.7;
+            if (isHovered) opacity = 0.6;
+            if (isMergeSource) opacity = 0.8;
+            
+            const borderWidth = isSelected ? 4 : isHovered ? 3 : (2 + level);
 
-      <div
-        ref={textRef}
-        style={{
-          fontFamily: 'Georgia, serif',
-          fontSize: '18px',
-          lineHeight: '2.2',
-          whiteSpace: 'pre-wrap',
-          color: '#111827',
-          position: 'relative',
-          zIndex: 2,
-          pointerEvents: 'none',
-        }}
-      >
-        {text}
-      </div>
-
-      {/* Annotation overlays */}
-
-{charRects.length > 0 && isEnabled && (
-  <div style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, pointerEvents: 'none', zIndex: 1 }}>
-    {annotationBoxes.map(({ annotation, boxes }) => {
-      const isSelected = selectedId === annotation.id;
-      const isHovered = hoveredId === annotation.id;
-      const isMergeSource = mergeSource === annotation.id;
-      const level = calculateLevel(annotation, annotations);
-      
-      // Dynamic padding based on nesting level
-      const basePadding = 3;
-      const levelPadding = level * 5; // More spacing for nested levels
-      const padding = basePadding + levelPadding;
-      
-      const colors = getAnnotationColor(annotation, annotations);
-      
-      // Enhanced opacity for better distinction
-      let opacity = 0.3 + (level * 0.05); // Nested annotations slightly more opaque
-      if (isSelected) opacity = 0.7;
-      if (isHovered) opacity = 0.6;
-      if (isMergeSource) opacity = 0.8;
-      
-      // Border thickness based on level and state
-      const borderWidth = isSelected ? 4 : isHovered ? 3 : (2 + level);
-
-      return (
-        <div key={annotation.id}>
-          {boxes.map((box, idx) => (
-            <div
-              key={`${annotation.id}-box-${idx}`}
-              data-annotation={annotation.id}
-              onMouseEnter={() => setHoveredId(annotation.id)}
-              onMouseLeave={() => setHoveredId(null)}
-              style={{
-                position: 'absolute',
-                left: `${box.left - padding}px`,
-                top: `${box.top - padding}px`,
-                width: `${box.width + padding * 2}px`,
-                height: `${box.height + padding * 2}px`,
-                
-                // Enhanced background with gradient for nested items
-                background: level > 0 
-                  ? `linear-gradient(135deg, ${colors.bg} 0%, ${colors.highlight} 100%)`
-                  : colors.bg,
-                
-                backgroundOpacity: opacity,
-                
-                // Multi-border effect for nested annotations
-                border: `${borderWidth}px solid ${
-                  isMergeSource ? '#F59E0B' : colors.border
-                }`,
-                
-                // Add inner shadow for depth on nested items
-                boxShadow: level > 0
-                  ? `inset 0 2px 4px rgba(0,0,0,0.1), ${
-                      isSelected 
+            return (
+              <div key={annotation.id}>
+                {boxes.map((box, idx) => (
+                  <div
+                    key={`${annotation.id}-box-${idx}`}
+                    data-annotation={annotation.id}
+                    onMouseEnter={() => setHoveredId(annotation.id)}
+                    onMouseLeave={() => setHoveredId(null)}
+                    style={{
+                      position: 'absolute',
+                      left: `${box.left - padding}px`,
+                      top: `${box.top - padding}px`,
+                      width: `${box.width + padding * 2}px`,
+                      height: `${box.height + padding * 2}px`,
+                      
+                      background: level > 0 
+                        ? `linear-gradient(135deg, ${colors.bg} 0%, ${colors.highlight} 100%)`
+                        : colors.bg,
+                      
+                      backgroundOpacity: opacity,
+                      
+                      border: `${borderWidth}px solid ${
+                        isMergeSource ? '#F59E0B' : colors.border
+                      }`,
+                      
+                      boxShadow: level > 0
+                        ? `inset 0 2px 4px rgba(0,0,0,0.1), ${
+                            isSelected 
+                              ? `0 0 0 4px ${colors.border}40, 0 8px 24px rgba(0,0,0,0.2)` 
+                              : isHovered 
+                              ? `0 0 0 3px ${colors.border}30, 0 6px 16px rgba(0,0,0,0.15)` 
+                              : '0 2px 6px rgba(0,0,0,0.08)'
+                          }`
+                        : isSelected 
                         ? `0 0 0 4px ${colors.border}40, 0 8px 24px rgba(0,0,0,0.2)` 
                         : isHovered 
                         ? `0 0 0 3px ${colors.border}30, 0 6px 16px rgba(0,0,0,0.15)` 
-                        : '0 2px 6px rgba(0,0,0,0.08)'
-                    }`
-                  : isSelected 
-                  ? `0 0 0 4px ${colors.border}40, 0 8px 24px rgba(0,0,0,0.2)` 
-                  : isHovered 
-                  ? `0 0 0 3px ${colors.border}30, 0 6px 16px rgba(0,0,0,0.15)` 
-                  : '0 2px 6px rgba(0,0,0,0.08)',
+                        : '0 2px 6px rgba(0,0,0,0.08)',
+                      
+                      borderRadius: `${6 + level * 2}px`,
+                      
+                      pointerEvents: 'all',
+                      cursor: mode === MODES.DELETE ? 'not-allowed' : 
+                              mode === MODES.MERGE ? 'copy' : 'pointer',
+                      
+                      transition: 'all 0.15s ease',
+                      
+                      zIndex: (level * 100) + (isSelected ? 2000 : 0) + (isHovered ? 1000 : 0),
+                      
+                      transform: isSelected 
+                        ? 'scale(1.02)' 
+                        : isHovered 
+                        ? 'scale(1.01)' 
+                        : 'scale(1)',
+                      
+                      ...(level > 1 && {
+                        backgroundImage: `repeating-linear-gradient(
+                          45deg,
+                          transparent,
+                          transparent 10px,
+                          ${colors.border}10 10px,
+                          ${colors.border}10 11px
+                        )`
+                      })
+                    }}
+                  />
+                ))}
                 
-                borderRadius: `${6 + level * 2}px`, // Larger radius for nested items
-                
-                pointerEvents: 'all',
-                cursor: mode === MODES.DELETE ? 'not-allowed' : 
-                        mode === MODES.MERGE ? 'copy' : 'pointer',
-                
-                transition: 'all 0.15s ease',
-                
-                // Z-index: deeper nesting = higher z-index, selected on top
-                zIndex: (level * 100) + (isSelected ? 2000 : 0) + (isHovered ? 1000 : 0),
-                
-                transform: isSelected 
-                  ? 'scale(1.02)' 
-                  : isHovered 
-                  ? 'scale(1.01)' 
-                  : 'scale(1)',
-                
-                // Add a subtle pattern for nested items
-                ...(level > 1 && {
-                  backgroundImage: `repeating-linear-gradient(
-                    45deg,
-                    transparent,
-                    transparent 10px,
-                    ${colors.border}10 10px,
-                    ${colors.border}10 11px
-                  )`
-                })
-              }}
-            />
-          ))}
-          
-          {/* Add level indicator badge for nested annotations */}
-          {level > 0 && isHovered && (
-            <div
-              style={{
-                position: 'absolute',
-                left: `${boxes[0].left - padding - 30}px`,
-                top: `${boxes[0].top - padding}px`,
-                padding: '2px 8px',
-                backgroundColor: colors.border,
-                color: 'white',
-                fontSize: '10px',
-                fontWeight: 'bold',
-                borderRadius: '12px',
-                zIndex: 9999,
-                pointerEvents: 'none',
-                boxShadow: '0 2px 8px rgba(0,0,0,0.2)',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '4px'
-              }}
-            >
-              <Layers className="w-3 h-3" />
-              L{level}
+                {level > 0 && isHovered && (
+                  <div
+                    style={{
+                      position: 'absolute',
+                      left: `${boxes[0].left - padding - 30}px`,
+                      top: `${boxes[0].top - padding}px`,
+                      padding: '2px 8px',
+                      backgroundColor: colors.border,
+                      color: 'white',
+                      fontSize: '10px',
+                      fontWeight: 'bold',
+                      borderRadius: '12px',
+                      zIndex: 9999,
+                      pointerEvents: 'none',
+                      boxShadow: '0 2px 8px rgba(0,0,0,0.2)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '4px'
+                    }}
+                  >
+                    <Layers className="w-3 h-3" />
+                    L{level}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+
+          {/* Temporary selection highlight */}
+          {tempSelection && charRects.size > 0 && (
+            <div>
+              {(() => {
+                const boxes = [];
+                let currentBox = null;
+                const textOffset = USE_VIRTUALIZATION ? visibleRange.startChar : 0;
+
+                for (let i = tempSelection.start; i < tempSelection.end; i++) {
+                  const rect = charRects.get(i);
+                  if (!rect) continue;
+
+                  if (!currentBox) {
+                    currentBox = { ...rect };
+                  } else {
+                    if (Math.abs(rect.top - currentBox.top) < 10) {
+                      currentBox.width = (rect.left + rect.width) - currentBox.left;
+                      currentBox.height = Math.max(currentBox.height, rect.height);
+                    } else {
+                      boxes.push(currentBox);
+                      currentBox = { ...rect };
+                    }
+                  }
+                }
+                if (currentBox) boxes.push(currentBox);
+
+                return boxes.map((box, idx) => (
+                  <div
+                    key={`temp-${idx}`}
+                    style={{
+                      position: 'absolute',
+                      left: `${box.left - 3}px`,
+                      top: `${box.top - 3}px`,
+                      width: `${box.width + 6}px`,
+                      height: `${box.height + 6}px`,
+                      backgroundColor: '#3B82F6',
+                      opacity: 0.3,
+                      border: '2px dashed #2563EB',
+                      borderRadius: '4px',
+                      pointerEvents: 'none',
+                      zIndex: 5000
+                    }}
+                  />
+                ));
+              })()}
             </div>
           )}
         </div>
-      );
-    })}
-
-    {/* Temporary selection highlight */}
-    {tempSelection && charRects.length > 0 && (
-      <div>
-        {(() => {
-          const boxes = [];
-          let currentBox = null;
-
-          for (let i = tempSelection.start; i < Math.min(tempSelection.end, charRects.length); i++) {
-            const rect = charRects[i];
-
-            if (!currentBox) {
-              currentBox = { ...rect };
-            } else {
-              if (Math.abs(rect.top - currentBox.top) < 10) {
-                currentBox.width = (rect.left + rect.width) - currentBox.left;
-                currentBox.height = Math.max(currentBox.height, rect.height);
-              } else {
-                boxes.push(currentBox);
-                currentBox = { ...rect };
-              }
-            }
-          }
-          if (currentBox) boxes.push(currentBox);
-
-          return boxes.map((box, idx) => (
-            <div
-              key={`temp-${idx}`}
-              style={{
-                position: 'absolute',
-                left: `${box.left - 3}px`,
-                top: `${box.top - 3}px`,
-                width: `${box.width + 6}px`,
-                height: `${box.height + 6}px`,
-                backgroundColor: '#3B82F6',
-                opacity: 0.3,
-                border: '2px dashed #2563EB',
-                borderRadius: '4px',
-                pointerEvents: 'none',
-                zIndex: 5000
-              }}
-            />
-          ));
-        })()}
-      </div>
-    )}
-  </div>
-)}
+      )}
 
       {/* Selection box */}
       {isSelecting && selectionBox && mode === MODES.SELECT && (
@@ -903,6 +1328,25 @@ const handleMouseUp = useCallback(() => {
             zIndex: 9999
           }}
         />
+      )}
+      
+      {/* Performance indicator for large texts */}
+      {USE_VIRTUALIZATION && (
+        <div style={{
+          position: 'fixed',
+          bottom: '20px',
+          right: '20px',
+          padding: '8px 12px',
+          backgroundColor: 'rgba(0,0,0,0.7)',
+          color: 'white',
+          borderRadius: '8px',
+          fontSize: '12px',
+          fontFamily: 'monospace',
+          zIndex: 10000,
+          pointerEvents: 'none'
+        }}>
+          📊 Virtualized: {visibleAnnotations.length}/{annotations.length} annotations • {charRects.size.toLocaleString()} chars measured
+        </div>
       )}
     </div>
   );
@@ -1703,51 +2147,46 @@ const AlgorithmPanel = ({ config, updateConfig, onGenerate, isGenerating }) => {
             })}
           </div>
 
-          {/* Mode-specific config */}
+          {/* Fixed Lines - Number Input */}
           {config.mode === 'lines' && (
             <div className="bg-blue-50 rounded-xl p-4">
               <label className="text-sm font-bold text-blue-900 mb-2 block">
-                Lines per Segment: {config.linesPerSegment}
+                Lines per Segment
               </label>
               <input
-                type="range"
-                min="5"
-                max="100"
-                step="5"
+                type="number"
+                min="1"
+                max="1000"
                 value={config.linesPerSegment}
                 onChange={(e) => updateConfig(draft => { 
-                  draft.linesPerSegment = parseInt(e.target.value); 
+                  draft.linesPerSegment = Math.max(1, parseInt(e.target.value) || 1); 
                 })}
-                className="w-full accent-blue-600"
+                className="w-full px-4 py-2 border-2 border-blue-300 rounded-lg text-lg font-bold text-blue-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
-              <div className="flex justify-between text-xs text-blue-700 mt-1">
-                <span>5</span>
-                <span>50</span>
-                <span>100</span>
+              <div className="text-xs text-blue-700 mt-2">
+                Split text every {config.linesPerSegment} lines
               </div>
             </div>
           )}
 
+          {/* Letter Count - Number Input */}
           {config.mode === 'letters' && (
             <div className="bg-green-50 rounded-xl p-4">
               <label className="text-sm font-bold text-green-900 mb-2 block">
-                Target Letters: {config.lettersPerSegment}
+                Target Letters per Segment
               </label>
               <input
-                type="range"
-                min="50"
-                max="500"
-                step="25"
+                type="number"
+                min="10"
+                max="5000"
                 value={config.lettersPerSegment}
                 onChange={(e) => updateConfig(draft => { 
-                  draft.lettersPerSegment = parseInt(e.target.value); 
+                  draft.lettersPerSegment = Math.max(10, parseInt(e.target.value) || 10); 
                 })}
-                className="w-full accent-green-600"
+                className="w-full px-4 py-2 border-2 border-green-300 rounded-lg text-lg font-bold text-green-900 focus:outline-none focus:ring-2 focus:ring-green-500"
               />
-              <div className="flex justify-between text-xs text-green-700 mt-1">
-                <span>50</span>
-                <span>275</span>
-                <span>500</span>
+              <div className="text-xs text-green-700 mt-2">
+                Target approximately {config.lettersPerSegment} letters per segment
               </div>
             </div>
           )}

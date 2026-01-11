@@ -25,7 +25,7 @@ function mapSegmentationType(mode) {
   return segmentTypeMap[mode] || 'paragraph';
 }
 // ==================== CONFIGURATION ====================
-// const API_BASE_URL = 'http://192.99.245.215:8000'
+// const API_BASE_URL = 'http://localhost:8000'
 const API_BASE_URL = 'http://192.99.245.215:8000'
 
 // ==================== API CLIENT ====================
@@ -75,26 +75,36 @@ async request(endpoint, options = {}) {
     });
 
     if (!response.ok) {
-      const error = await response.json().catch(() => ({}));
-      
-      console.error('❌ API Error Details:', {
-        endpoint,
-        status: response.status,
-        statusText: response.statusText,
-        error: error,
-        detail: error.detail,
-        body: error.body
-      });
-      
-      if (error.detail && Array.isArray(error.detail)) {
-        console.error('📋 Validation Errors:');
-        error.detail.forEach(err => {
-          console.error(`  - ${err.loc?.join('.')}: ${err.msg} (type: ${err.type})`);
-        });
-      }
-      
-      throw new Error(error.detail || `HTTP ${response.status}: ${response.statusText}`);
-    }
+  const error = await response.json().catch(() => ({}));
+  
+  console.error('❌ API Error Details:', {
+    endpoint,
+    status: response.status,
+    statusText: response.statusText,
+    error: error,
+    detail: error.detail,
+    body: error.body
+  });
+  
+  if (error.detail && Array.isArray(error.detail)) {
+    console.error('📋 Validation Errors:');
+    error.detail.forEach(err => {
+      console.error(`  - ${err.loc?.join('.')}: ${err.msg} (type: ${err.type})`);
+    });
+  }
+  
+  // ✅ FIX: Properly stringify error.detail if it's an object
+  let errorMessage;
+  if (typeof error.detail === 'string') {
+    errorMessage = error.detail;
+  } else if (error.detail && typeof error.detail === 'object') {
+    errorMessage = JSON.stringify(error.detail);
+  } else {
+    errorMessage = `HTTP ${response.status}: ${response.statusText}`;
+  }
+  
+  throw new Error(errorMessage);
+}
 
     const data = await response.json();
     console.log('🌐 API Response Data:', data);
@@ -116,6 +126,34 @@ async request(endpoint, options = {}) {
     console.error(`❌ API Error [${endpoint}]:`, error);
     throw error;
   }
+}
+
+// In APIClient class, add these methods:
+
+uploadWorkFile(file, authorFolder, workTitle, date, isNewAuthor = false) {
+  const formData = new FormData();
+  formData.append('file', file);
+  formData.append('author_folder', authorFolder);
+  formData.append('work_title', workTitle);
+  formData.append('date', date);
+  formData.append('is_new_author', isNewAuthor.toString());
+  
+  // Special handling for file upload - don't add Content-Type header
+  return fetch(`${this.baseURL}/api/corpus/upload`, {
+    method: 'POST',
+    body: formData, // FormData automatically sets Content-Type with boundary
+  }).then(async (response) => {
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({}));
+      throw new Error(error.detail || `Upload failed: ${response.statusText}`);
+    }
+    return response.json();
+  });
+}
+
+// Get list of all authors for the upload dropdown
+getAuthorsForUpload() {
+  return this.request('/api/corpus/authors');
 }
 
   getAllResults() {
@@ -649,6 +687,8 @@ export const ACTIONS = {
   // Authors & Works
   SET_AUTHORS: 'SET_AUTHORS',
   SET_SELECTED_AUTHOR: 'SET_SELECTED_AUTHOR',
+  SET_UPLOAD_PROGRESS: 'SET_UPLOAD_PROGRESS',
+  CLEAR_UPLOAD_PROGRESS: 'CLEAR_UPLOAD_PROGRESS',
   SET_AVAILABLE_WORKS: 'SET_AVAILABLE_WORKS',
   SET_SELECTED_WORK: 'SET_SELECTED_WORK',
   SET_AI_CHAT_HISTORY: 'SET_AI_CHAT_HISTORY',
@@ -1498,7 +1538,114 @@ export function AppProvider({ children }) {
     });
   }, []);
 
-  // In AppProvider component (around line 800), add this callback:
+// ==================== FILE UPLOAD CALLBACKS ====================
+
+const uploadWorkFile = useCallback(async (file, options = {}) => {
+  const {
+    authorFolder,
+    workTitle,
+    date = 'Unknown',
+    isNewAuthor = false
+  } = options;
+  
+  // Validate inputs
+  if (!file) {
+    addNotification('error', 'No file selected');
+    return null;
+  }
+  
+  if (!authorFolder || !workTitle) {
+    addNotification('error', 'Author and work title are required');
+    return null;
+  }
+  
+  // Validate file type
+  const validExtensions = ['.txt', '.text'];
+  const fileName = file.name.toLowerCase();
+  const isValidFile = validExtensions.some(ext => fileName.endsWith(ext));
+  
+  if (!isValidFile) {
+    addNotification('error', 'Only .txt files are supported');
+    return null;
+  }
+  
+  // Validate file size (max 10MB)
+  const maxSize = 10 * 1024 * 1024; // 10MB
+  if (file.size > maxSize) {
+    addNotification('error', 'File too large. Maximum size: 10MB');
+    return null;
+  }
+  
+  dispatch({ type: ACTIONS.SET_LOADING, payload: { key: 'upload', value: true } });
+  
+  try {
+    console.log('📤 Uploading file:', {
+      name: file.name,
+      size: file.size,
+      author: authorFolder,
+      work: workTitle,
+      isNewAuthor
+    });
+    
+    const result = await api.uploadWorkFile(
+      file,
+      authorFolder,
+      workTitle,
+      date,
+      isNewAuthor
+    );
+    
+    console.log('✅ Upload successful:', result);
+    
+    // Show success notification with details
+    const message = isNewAuthor
+      ? `Created new author "${authorFolder}" and uploaded "${workTitle}"`
+      : `Uploaded "${workTitle}" to ${authorFolder}`;
+    
+    addNotification('success', message, {
+      duration: 5000
+    });
+    
+    // If uploaded to existing author, refresh works list
+    if (!isNewAuthor && state.library.selectedAuthor === authorFolder) {
+      console.log('🔄 Refreshing works list...');
+      const works = await api.getWorksByAuthor(authorFolder);
+      dispatch({ type: ACTIONS.SET_AVAILABLE_WORKS, payload: works });
+    }
+    
+    // If uploaded to new author, refresh authors list
+    if (isNewAuthor) {
+      console.log('🔄 Refreshing authors list...');
+      const authors = await api.getAuthors();
+      dispatch({ type: ACTIONS.SET_AUTHORS, payload: authors });
+    }
+    
+    return result;
+  } catch (error) {
+    console.error('❌ Upload error:', error);
+    addNotification('error', 'Upload failed: ' + error.message, {
+      duration: 5000
+    });
+    throw error;
+  } finally {
+    dispatch({ type: ACTIONS.SET_LOADING, payload: { key: 'upload', value: false } });
+  }
+}, [state.library.selectedAuthor, addNotification, api, dispatch]);
+
+const getAuthorsForUpload = useCallback(async () => {
+  try {
+    const authors = await api.getAuthorsForUpload();
+    return authors.map(author => ({
+      value: author.folder_name,
+      label: author.name,
+      workCount: author.work_count
+    }));
+  } catch (error) {
+    console.error('Failed to load authors for upload:', error);
+    addNotification('error', 'Failed to load authors');
+    return [];
+  }
+}, [addNotification, api]);
 
 const uploadResultToDrive = useCallback(async (resultId) => {
   try {
@@ -3392,13 +3539,18 @@ useEffect(() => {
       }
       
     } catch (error) {
-      // If 404, no results yet - this is normal
-      if (error.message.includes('404') || error.message.includes('No results found')) {
-        console.log('📭 No previous results found');
-      } else {
-        console.error('❌ Error restoring latest results:', error);
-      }
-    }
+  // If 404, no results yet - this is normal
+  if (error.message.includes('404') || error.message.includes('No results found')) {
+    console.log('📭 No previous results found');
+  } else {
+    // ✅ FIX: Log the full error details
+    console.error('❌ Error restoring latest results:', error);
+    console.error('Error details:', {
+      message: error.message,
+      stack: error.stack
+    });
+  }
+}
   }
   
   const timer = setTimeout(restoreLatestResults, 1500);
@@ -3489,6 +3641,8 @@ const value = {
   loadSession,
   listSessions,
   deleteSession,
+  uploadWorkFile,
+  getAuthorsForUpload,
   state,
   dispatch,
   uploadResultToDrive,  // ← ADD THIS
