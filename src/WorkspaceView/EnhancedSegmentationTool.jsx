@@ -1982,50 +1982,53 @@ const AnnotationList = ({ annotations, onSelect, selectedId, onDelete, onLock })
       </div>
     )}
     
-    {/* Detection Confidence Bar */}
-    {/* Detection Confidence Bar */}
+{/* Detection Confidence Bar */}
 {ann.metadata.detectionConfidence !== undefined && ann.metadata.detectionConfidence !== null && (
-  <div style={{ marginBottom: '8px' }}>
-    <div style={{
-      display: 'flex',
-      justifyContent: 'space-between',
-      alignItems: 'center',
-      marginBottom: '4px'
-    }}>
-      <span style={{ fontSize: '10px', color: '#6B7280', fontWeight: '600' }}>
-        Detection Confidence
-      </span>
-      <span style={{ fontSize: '11px', fontWeight: 'bold', color: '#581C87' }}>
-        {typeof ann.metadata.detectionConfidence === 'number' 
-          ? ann.metadata.detectionConfidence.toFixed(1)
-          : ann.metadata.detectionConfidence}%
-      </span>
-    </div>
-    <div style={{
-      width: '100%',
-      height: '6px',
-      backgroundColor: '#E9D5FF',
-      borderRadius: '3px',
-      overflow: 'hidden'
-    }}>
-      <div style={{
-        width: `${Math.min(100, typeof ann.metadata.detectionConfidence === 'number' 
-          ? ann.metadata.detectionConfidence 
-          : parseFloat(ann.metadata.detectionConfidence) || 0)}%`,
-        height: '100%',
-        background: (typeof ann.metadata.detectionConfidence === 'number' 
-          ? ann.metadata.detectionConfidence 
-          : parseFloat(ann.metadata.detectionConfidence) || 0) >= 70 
-          ? 'linear-gradient(90deg, #10B981 0%, #059669 100%)'
-          : (typeof ann.metadata.detectionConfidence === 'number' 
-            ? ann.metadata.detectionConfidence 
-            : parseFloat(ann.metadata.detectionConfidence) || 0) >= 40
-          ? 'linear-gradient(90deg, #F59E0B 0%, #D97706 100%)'
-          : 'linear-gradient(90deg, #EF4444 0%, #DC2626 100%)',
-        transition: 'width 0.3s ease'
-      }} />
-    </div>
-  </div>
+  (() => {
+    // Safely convert to number
+    const confidence = typeof ann.metadata.detectionConfidence === 'number' 
+      ? ann.metadata.detectionConfidence 
+      : parseFloat(ann.metadata.detectionConfidence);
+    
+    // Skip if not a valid number
+    if (isNaN(confidence)) return null;
+    
+    return (
+      <div style={{ marginBottom: '8px' }}>
+        <div style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          marginBottom: '4px'
+        }}>
+          <span style={{ fontSize: '10px', color: '#6B7280', fontWeight: '600' }}>
+            Detection Confidence
+          </span>
+          <span style={{ fontSize: '11px', fontWeight: 'bold', color: '#581C87' }}>
+            {confidence.toFixed(1)}%
+          </span>
+        </div>
+        <div style={{
+          width: '100%',
+          height: '6px',
+          backgroundColor: '#E9D5FF',
+          borderRadius: '3px',
+          overflow: 'hidden'
+        }}>
+          <div style={{
+            width: `${Math.min(100, confidence)}%`,
+            height: '100%',
+            background: confidence >= 70 
+              ? 'linear-gradient(90deg, #10B981 0%, #059669 100%)'
+              : confidence >= 40
+              ? 'linear-gradient(90deg, #F59E0B 0%, #D97706 100%)'
+              : 'linear-gradient(90deg, #EF4444 0%, #DC2626 100%)',
+            transition: 'width 0.3s ease'
+          }} />
+        </div>
+      </div>
+    );
+  })()
 )}
     
     {/* Statistical Flags */}
