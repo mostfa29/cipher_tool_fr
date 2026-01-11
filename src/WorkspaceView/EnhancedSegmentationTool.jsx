@@ -2005,7 +2005,7 @@ const AnnotationList = ({ annotations, onSelect, selectedId, onDelete, onLock })
             Detection Confidence
           </span>
           <span style={{ fontSize: '11px', fontWeight: 'bold', color: '#581C87' }}>
-            {confidence.toFixed(1)}%
+            {confidence}%
           </span>
         </div>
         <div style={{
