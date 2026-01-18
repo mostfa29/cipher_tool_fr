@@ -36,13 +36,18 @@ const Navigation = ({
       secondaryBadge: highConfidenceCount > 0 ? `⭐ ${highConfidenceCount}` : null,
     },
     {
+      id: 'mini_merlin',
+      label: 'Mini-Merlin',
+      description: 'Fast anagram solver with dictionary suggestions',
+      icon: '✨',
+    },
+    {
       id: 'ai_chat',
       label: 'AI Assistant',
       description: 'Chat with AI about your decoded results',
       icon: '🤖',
       badge: resultCount > 0 ? '✨' : null,
     },
-
   ];
 
   const handleTabClick = (viewId) => {
@@ -125,6 +130,8 @@ const Navigation = ({
                     activeView === view.id
                       ? view.id === 'ai_chat'
                         ? 'text-purple-600 font-semibold border-b-3 border-purple-600 bg-gradient-to-br from-purple-50 to-pink-50'
+                        : view.id === 'mini_merlin'
+                        ? 'text-pink-600 font-semibold border-b-3 border-pink-600 bg-gradient-to-br from-purple-50 to-pink-50'
                         : 'text-blue-600 font-semibold border-b-3 border-blue-600 bg-blue-50'
                       : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
                   }
@@ -160,7 +167,9 @@ const Navigation = ({
                 {activeView === view.id && (
                   <div className={`absolute bottom-0 left-0 right-0 h-1 rounded-t ${
                     view.id === 'ai_chat' 
-                      ? 'bg-gradient-to-r from-purple-600 to-pink-600' 
+                      ? 'bg-gradient-to-r from-purple-600 to-pink-600'
+                      : view.id === 'mini_merlin'
+                      ? 'bg-gradient-to-r from-purple-600 to-pink-600'
                       : 'bg-blue-600'
                   }`} />
                 )}
@@ -332,6 +341,8 @@ const Navigation = ({
                       activeView === view.id
                         ? view.id === 'ai_chat'
                           ? 'bg-gradient-to-r from-purple-50 to-pink-50 text-purple-600 font-semibold border-l-4 border-purple-600'
+                          : view.id === 'mini_merlin'
+                          ? 'bg-gradient-to-r from-purple-50 to-pink-50 text-pink-600 font-semibold border-l-4 border-pink-600'
                           : 'bg-blue-50 text-blue-600 font-semibold border-l-4 border-blue-600'
                         : 'text-gray-700 hover:bg-gray-50'
                     }
@@ -386,7 +397,7 @@ const Navigation = ({
 };
 
 Navigation.propTypes = {
-  activeView: PropTypes.oneOf(['workspace', 'analyze', 'results', 'library', 'ai_chat']).isRequired,
+  activeView: PropTypes.oneOf(['workspace', 'analyze', 'results', 'library', 'ai_chat', 'mini_merlin']).isRequired,
   onNavigate: PropTypes.func.isRequired,
   hasUnsavedChanges: PropTypes.bool,
   isProcessing: PropTypes.bool,

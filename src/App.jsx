@@ -2,6 +2,7 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { useAppState, ACTIONS } from './context/AppContext';
 import AIViewComponent from './AIView/AIView';
+import MiniMerlinView from './MiniMerlinView/MiniMerlin';
 
 // AppShell Components
 import Navigation from './AppShell/Navigation';
@@ -33,7 +34,7 @@ import SearchBar from './LibraryView/SearchBar';
 import { 
   FileText, Layers, AlertCircle, CheckCircle, Sparkles, TrendingUp,
   Edit2, Zap, BarChart3, BookOpen, Clock, Target, Award, ArrowRight,
-  Save, RefreshCw, Plus, Trash2, X
+  Save, RefreshCw, Plus, Trash2, X 
 } from 'lucide-react';
 
 // ============================================================================
@@ -45,7 +46,9 @@ const VIEWS = {
   ANALYZE: 'analyze',
   RESULTS: 'results',
   // LIBRARY: 'library',
-  AI_CHAT: 'ai_chat'
+  AI_CHAT: 'ai_chat',
+    MINI_MERLIN: 'mini_merlin'  // ADD THIS
+
 };
 
 const NOTIFICATION_TYPES = {
@@ -227,6 +230,10 @@ function useGlobalKeyboardShortcuts(options) {
             e.preventDefault();
             setShowSettings(true);
             break;
+          case '5':
+            e.preventDefault();
+            handleNavigate(VIEWS.MINI_MERLIN);
+            break;
           case '/':
             e.preventDefault();
             setShowHelp(true);
@@ -249,7 +256,7 @@ function useGlobalKeyboardShortcuts(options) {
 // VIEW ROUTER COMPONENT
 // ============================================================================
 function ViewRouter(props) {
-  const { activeView, exportResults } = props;  // ← ADD exportResults here
+  const { activeView, exportResults } = props;
 
   switch (activeView) {
     case VIEWS.WORKSPACE:
@@ -257,10 +264,11 @@ function ViewRouter(props) {
     case VIEWS.ANALYZE:
       return <AnalyzeView {...props} />;
     case VIEWS.RESULTS:
-      return <ResultsView exportResults={exportResults} />;  // ← ADD exportResults prop
-
+      return <ResultsView exportResults={exportResults} />;
     case VIEWS.AI_CHAT:
       return <AIViewComponent />;
+    case VIEWS.MINI_MERLIN:  // ADD THIS CASE
+      return <MiniMerlinView />;
     default:
       return <NotFoundView />;
   }

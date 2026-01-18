@@ -74,6 +74,26 @@ export const INITIAL_STATE = {
     gibberishReconstructions: null,
     batchResults: null,
   },
+  // Add to initial state:
+anagram: {
+  suggestions: null,
+  aiSuggestions: null,
+  explanation: null,
+  validation: null,
+  stats: null,
+  batchResults: null,
+},
+// Add to initial state:
+  miniMerlin: {
+  currentSession: null,
+  sessionState: null,
+  suggestions: [],
+  solutions: [],
+  notes: [],
+  sessionsList: [],
+  aiEnabled: false,  // ← ADD THIS
+  aiChatHistory: [], // ← ADD THIS
+},
 
   // ==================== LIBRARY STATE ====================
   library: {

@@ -128,7 +128,169 @@ async request(endpoint, options = {}) {
   }
 }
 
-// In APIClient class, add these methods:
+
+// MINI-MERLIN 2026 ENDPOINTS
+createMiniMerlinSession() {
+  return this.request('/api/mini-merlin/session/create', {
+    method: 'POST',
+  });
+}
+
+// In APIClient class (around line 150)
+miniMerlinAIChat(sessionId, message, conversationHistory = []) {
+  return this.request(`/api/mini-merlin/session/${sessionId}/ai-chat`, {
+    method: 'POST',
+    body: JSON.stringify({
+      message: message,
+      conversation_history: conversationHistory
+    }),
+  });
+}
+loadTextIntoMiniMerlin(text, sessionId = null) {
+  return this.request('/api/mini-merlin/session/load-text', {
+    method: 'POST',
+    body: JSON.stringify({
+      text: text,
+      session_id: sessionId
+    }),
+  });
+}
+
+updateMiniMerlinScratchPad(sessionId, text) {
+  return this.request('/api/mini-merlin/session/update-scratch', {
+    method: 'POST',
+    body: JSON.stringify({
+      session_id: sessionId,
+      text: text
+    }),
+  });
+}
+
+getMiniMerlinSuggestions(sessionId, minLength = 2, maxResults = 100) {
+  return this.request(`/api/mini-merlin/session/${sessionId}/suggestions?min_length=${minLength}&max_results=${maxResults}`);
+}
+
+getMiniMerlinSolutions(sessionId, maxWordsPerSolution = 5, maxResults = 50) {
+  return this.request(`/api/mini-merlin/session/${sessionId}/solutions?max_words_per_solution=${maxWordsPerSolution}&max_results=${maxResults}`);
+}
+
+addMiniMerlinNote(sessionId, text, tags = null) {
+  return this.request('/api/mini-merlin/session/note/add', {
+    method: 'POST',
+    body: JSON.stringify({
+      session_id: sessionId,
+      text: text,
+      tags: tags
+    }),
+  });
+}
+
+deleteMiniMerlinNote(sessionId, noteId) {
+  return this.request(`/api/mini-merlin/session/${sessionId}/note/${noteId}`, {
+    method: 'DELETE',
+  });
+}
+
+getMiniMerlinNotes(sessionId) {
+  return this.request(`/api/mini-merlin/session/${sessionId}/notes`);
+}
+
+getMiniMerlinSessionState(sessionId) {
+  return this.request(`/api/mini-merlin/session/${sessionId}/state`);
+}
+getMiniMerlinSession(sessionId) {
+  return this.request(`/api/mini-merlin/session/${sessionId}`);
+}
+exportMiniMerlinSession(sessionId, format = 'csv') {
+  // Don't use the request method - direct download
+  const url = `${this.baseURL}/api/mini-merlin/session/${sessionId}/export?format=${format}`;
+  
+  // Create invisible link and trigger download
+  const link = document.createElement('a');
+  link.href = url;
+  link.style.display = 'none';
+  document.body.appendChild(link);
+  link.click();
+  
+  // Cleanup
+  setTimeout(() => {
+    document.body.removeChild(link);
+  }, 100);
+  
+  return Promise.resolve({ success: true });
+}
+
+listMiniMerlinSessions() {
+  return this.request('/api/mini-merlin/sessions/list');
+}
+
+deleteMiniMerlinSession(sessionId) {
+  return this.request(`/api/mini-merlin/session/${sessionId}`, {
+    method: 'DELETE',
+  });
+}
+// ANAGRAM SOLVER ENDPOINTS
+getAnagramSuggestions(sourceText, mode = "interactive", maxSuggestions = 20) {
+  return this.request('/api/anagram/suggest', {
+    method: 'POST',
+    body: JSON.stringify({
+      source_text: sourceText,
+      mode: mode,
+      use_ai: false,
+      target_entities: [],
+      max_suggestions: maxSuggestions
+    }),
+  });
+}
+
+getAIAnagramSuggestions(sourceText, targetEntities = [], maxSuggestions = 10) {
+  return this.request('/api/anagram/ai-suggest', {
+    method: 'POST',
+    body: JSON.stringify({
+      source_text: sourceText,
+      mode: "interactive",
+      use_ai: true,
+      target_entities: targetEntities,
+      max_suggestions: maxSuggestions
+    }),
+  });
+}
+
+explainAnagram(solution, sourceText, spoilage = "") {
+  return this.request('/api/anagram/explain', {
+    method: 'POST',
+    body: JSON.stringify({
+      solution: solution,
+      source_text: sourceText,
+      spoilage: spoilage
+    }),
+  });
+}
+
+validateAnagram(sourceText, proposedSolution) {
+  return this.request('/api/anagram/validate', {
+    method: 'POST',
+    body: JSON.stringify({
+      source_text: sourceText,
+      proposed_solution: proposedSolution
+    }),
+  });
+}
+
+getAnagramStats() {
+  return this.request('/api/anagram/stats');
+}
+
+batchAnagramSuggestions(sourceTexts, useAI = false, maxSuggestionsPerText = 10) {
+  return this.request('/api/anagram/batch', {
+    method: 'POST',
+    body: JSON.stringify({
+      source_texts: sourceTexts,
+      use_ai: useAI,
+      max_suggestions_per_text: maxSuggestionsPerText
+    }),
+  });
+}
 
 uploadWorkFile(file, authorFolder, workTitle, date, isNewAuthor = false) {
   const formData = new FormData();
@@ -184,6 +346,44 @@ uploadResultToDrive(resultId) {
     return this.request('/api/results/latest');
   }
 
+  addSentenceToSession(sessionId, text, name = null) {
+  return this.request(`/api/mini-merlin/session/${sessionId}/sentence/add`, {
+    method: 'POST',
+    body: JSON.stringify({
+      text: text,
+      name: name
+    }),
+  });
+}
+
+updateSentence(sessionId, sentenceId, scratchPad, name = null) {
+  return this.request(`/api/mini-merlin/session/${sessionId}/sentence/${sentenceId}`, {
+    method: 'PUT',
+    body: JSON.stringify({
+      scratch_pad: scratchPad,
+      name: name
+    }),
+  });
+}
+
+deleteSentence(sessionId, sentenceId) {
+  return this.request(`/api/mini-merlin/session/${sessionId}/sentence/${sentenceId}`, {
+    method: 'DELETE',
+  });
+}
+
+saveSentenceSolution(sessionId, sentenceId, solutionText, solutionType = 'manual', metadata = {}) {
+  return this.request(`/api/mini-merlin/session/${sessionId}/sentence/${sentenceId}/solution/save`, {
+    method: 'POST',
+    body: JSON.stringify({
+      solution_text: solutionText,
+      solution_type: solutionType,
+      metadata: metadata
+    }),
+  });
+}
+
+
   deleteResult(resultId) {
     return this.request(`/api/results/${resultId}`, {
       method: 'DELETE',
@@ -218,6 +418,7 @@ updateSession(sessionId, updates) {
     body: JSON.stringify(updates),
   });
 }
+
 // Advanced Analysis Endpoints
 calculateStatisticalImprobability(decodedText, segmentLength, cipherMethod) {
   return this.request('/api/analysis/statistical-improbability', {
@@ -685,6 +886,11 @@ const api = new APIClient(API_BASE_URL);
 // ==================== ACTION TYPES ====================
 export const ACTIONS = {
   // Authors & Works
+  // Around line 200 in ACTIONS
+SET_MINI_MERLIN_AI_CHAT: 'SET_MINI_MERLIN_AI_CHAT',
+ADD_MINI_MERLIN_AI_MESSAGE: 'ADD_MINI_MERLIN_AI_MESSAGE',
+CLEAR_MINI_MERLIN_AI_CHAT: 'CLEAR_MINI_MERLIN_AI_CHAT',
+TOGGLE_MINI_MERLIN_AI: 'TOGGLE_MINI_MERLIN_AI',
   SET_AUTHORS: 'SET_AUTHORS',
   SET_SELECTED_AUTHOR: 'SET_SELECTED_AUTHOR',
   SET_UPLOAD_PROGRESS: 'SET_UPLOAD_PROGRESS',
@@ -702,7 +908,26 @@ export const ACTIONS = {
   SET_SEGMENT_AI_ANALYSIS: 'SET_SEGMENT_AI_ANALYSIS',
   SET_AI_MODEL_STATS: 'SET_AI_MODEL_STATS',
   SET_CURRENT_SESSION: 'SET_CURRENT_SESSION',
+  SET_ANAGRAM_SUGGESTIONS: 'SET_ANAGRAM_SUGGESTIONS',
+SET_AI_ANAGRAM_SUGGESTIONS: 'SET_AI_ANAGRAM_SUGGESTIONS',
+SET_ANAGRAM_EXPLANATION: 'SET_ANAGRAM_EXPLANATION',
+SET_ANAGRAM_VALIDATION: 'SET_ANAGRAM_VALIDATION',
+SET_ANAGRAM_STATS: 'SET_ANAGRAM_STATS',
+SET_BATCH_ANAGRAM_RESULTS: 'SET_BATCH_ANAGRAM_RESULTS',
 UPDATE_SESSION_TAB_STATE: 'UPDATE_SESSION_TAB_STATE',
+  SET_CURRENT_MINI_MERLIN_SESSION: 'SET_CURRENT_MINI_MERLIN_SESSION',
+  UPDATE_MINI_MERLIN_SESSION: 'UPDATE_MINI_MERLIN_SESSION',
+  UPDATE_MINI_MERLIN_SCRATCH_PAD: 'UPDATE_MINI_MERLIN_SCRATCH_PAD',
+  SET_MINI_MERLIN_SUGGESTIONS: 'SET_MINI_MERLIN_SUGGESTIONS',
+  SET_MINI_MERLIN_SOLUTIONS: 'SET_MINI_MERLIN_SOLUTIONS',
+  ADD_MINI_MERLIN_NOTE: 'ADD_MINI_MERLIN_NOTE',
+  DELETE_MINI_MERLIN_NOTE: 'DELETE_MINI_MERLIN_NOTE',
+  SET_MINI_MERLIN_NOTES: 'SET_MINI_MERLIN_NOTES',
+  SET_MINI_MERLIN_SESSION_STATE: 'SET_MINI_MERLIN_SESSION_STATE',
+  SET_MINI_MERLIN_SESSIONS_LIST: 'SET_MINI_MERLIN_SESSIONS_LIST',
+  DELETE_MINI_MERLIN_SESSION: 'DELETE_MINI_MERLIN_SESSION',
+  CLEAR_MINI_MERLIN_SESSION: 'CLEAR_MINI_MERLIN_SESSION',
+
 CLEAR_CURRENT_SESSION: 'CLEAR_CURRENT_SESSION',
 
   UPDATE_ANALYSIS_JOB: 'UPDATE_ANALYSIS_JOB',
@@ -786,6 +1011,41 @@ function appReducer(state, action) {
           authors: action.payload,
         },
       };
+      case ACTIONS.SET_MINI_MERLIN_AI_CHAT:
+  return {
+    ...state,
+    miniMerlin: {
+      ...state.miniMerlin,
+      aiChatHistory: action.payload,
+    },
+  };
+
+case ACTIONS.ADD_MINI_MERLIN_AI_MESSAGE:
+  return {
+    ...state,
+    miniMerlin: {
+      ...state.miniMerlin,
+      aiChatHistory: [...(state.miniMerlin.aiChatHistory || []), action.payload],
+    },
+  };
+
+case ACTIONS.CLEAR_MINI_MERLIN_AI_CHAT:
+  return {
+    ...state,
+    miniMerlin: {
+      ...state.miniMerlin,
+      aiChatHistory: [],
+    },
+  };
+
+case ACTIONS.TOGGLE_MINI_MERLIN_AI:
+  return {
+    ...state,
+    miniMerlin: {
+      ...state.miniMerlin,
+      aiEnabled: action.payload,
+    },
+  };
       case ACTIONS.SET_CURRENT_SESSION:
   return {
     ...state,
@@ -794,6 +1054,60 @@ function appReducer(state, action) {
       current: action.payload,
       isActive: true
     }
+  };
+ 
+case ACTIONS.SET_ANAGRAM_SUGGESTIONS:
+  return {
+    ...state,
+    anagram: {
+      ...state.anagram || {},
+      suggestions: action.payload,
+    },
+  };
+
+case ACTIONS.SET_AI_ANAGRAM_SUGGESTIONS:
+  return {
+    ...state,
+    anagram: {
+      ...state.anagram || {},
+      aiSuggestions: action.payload,
+    },
+  };
+
+case ACTIONS.SET_ANAGRAM_EXPLANATION:
+  return {
+    ...state,
+    anagram: {
+      ...state.anagram || {},
+      explanation: action.payload,
+    },
+  };
+
+case ACTIONS.SET_ANAGRAM_VALIDATION:
+  return {
+    ...state,
+    anagram: {
+      ...state.anagram || {},
+      validation: action.payload,
+    },
+  };
+
+case ACTIONS.SET_ANAGRAM_STATS:
+  return {
+    ...state,
+    anagram: {
+      ...state.anagram || {},
+      stats: action.payload,
+    },
+  };
+
+case ACTIONS.SET_BATCH_ANAGRAM_RESULTS:
+  return {
+    ...state,
+    anagram: {
+      ...state.anagram || {},
+      batchResults: action.payload,
+    },
   };
 
 case ACTIONS.UPDATE_SESSION_TAB_STATE:
@@ -1315,6 +1629,103 @@ case ACTIONS.SET_PROGRESS_DASHBOARD:
       };
     }
 
+case ACTIONS.SET_CURRENT_MINI_MERLIN_SESSION:
+  return {
+    ...state,
+    miniMerlin: {
+      ...state.miniMerlin,
+      currentSession: action.payload,
+    },
+  };
+
+
+  case ACTIONS.UPDATE_MINI_MERLIN_SCRATCH_PAD:
+  return {
+    ...state,
+    miniMerlin: {
+      ...state.miniMerlin,
+      currentSession: {
+        ...state.miniMerlin.currentSession,
+        scratch_pad: action.payload,
+      },
+    },
+  };
+
+case ACTIONS.SET_MINI_MERLIN_SUGGESTIONS:
+  return {
+    ...state,
+    miniMerlin: {
+      ...state.miniMerlin,
+      suggestions: action.payload,
+    },
+  };
+
+case ACTIONS.SET_MINI_MERLIN_SOLUTIONS:
+  return {
+    ...state,
+    miniMerlin: {
+      ...state.miniMerlin,
+      solutions: action.payload,
+    },
+  };
+
+case ACTIONS.ADD_MINI_MERLIN_NOTE:
+  return {
+    ...state,
+    miniMerlin: {
+      ...state.miniMerlin,
+      notes: [...state.miniMerlin.notes, action.payload],
+    },
+  };
+
+case ACTIONS.DELETE_MINI_MERLIN_NOTE:
+  return {
+    ...state,
+    miniMerlin: {
+      ...state.miniMerlin,
+      notes: state.miniMerlin.notes.filter(n => n.id !== action.payload.noteId),
+    },
+  };
+
+case ACTIONS.SET_MINI_MERLIN_NOTES:
+  return {
+    ...state,
+    miniMerlin: {
+      ...state.miniMerlin,
+      notes: action.payload.notes || [],
+    },
+  };
+
+
+case ACTIONS.SET_MINI_MERLIN_SESSIONS_LIST:
+  return {
+    ...state,
+    miniMerlin: {
+      ...state.miniMerlin,
+      sessionsList: action.payload.sessions || [],
+    },
+  };
+
+case ACTIONS.DELETE_MINI_MERLIN_SESSION:
+  return {
+    ...state,
+    miniMerlin: {
+      ...state.miniMerlin,
+      sessionsList: state.miniMerlin.sessionsList.filter(
+        s => s.session_id !== action.payload.sessionId
+      ),
+      currentSession: state.miniMerlin.currentSession?.session_id === action.payload.sessionId
+        ? null
+        : state.miniMerlin.currentSession,
+    },
+  };
+
+case ACTIONS.CLEAR_MINI_MERLIN_SESSION:
+  return {
+    ...state,
+    miniMerlin: INITIAL_STATE.miniMerlin,
+  };
+
     case ACTIONS.CLEAR_WORKSPACE:
       return {
         ...state,
@@ -1370,7 +1781,7 @@ case ACTIONS.SET_PROGRESS_DASHBOARD:
 
 case ACTIONS.START_ANALYSIS:
   console.log('🔥 REDUCER: START_ANALYSIS called with payload:', action.payload);
-  const newState = {
+  let newState = {
     ...state,
     analyze: {
       ...state.analyze,
@@ -1448,7 +1859,41 @@ case ACTIONS.START_ANALYSIS:
           },
         },
       };
-
+case ACTIONS.UPDATE_MINI_MERLIN_SESSION:
+  console.log('🔧 REDUCER: UPDATE_MINI_MERLIN_SESSION', action.payload);
+  
+  // Build the new session state from the payload
+  const updatedSessionState = {
+    original_pool: action.payload.original_pool_str || state.miniMerlin.sessionState?.original_pool || '',
+    current_pool: action.payload.current_pool_str || action.payload.original_pool_str || state.miniMerlin.sessionState?.current_pool || '',
+    used_letters: action.payload.scratch_pad || '',
+    spoilage: action.payload.spoilage || 0,
+    letters_remaining: action.payload.pool_size || action.payload.remaining_letters || 0
+  };
+  
+  console.log('🔧 REDUCER: New sessionState:', updatedSessionState);
+  
+  return {
+    ...state,
+    miniMerlin: {
+      ...state.miniMerlin,
+      currentSession: {
+        ...state.miniMerlin.currentSession,
+        ...action.payload,
+      },
+      sessionState: updatedSessionState  // ← CRITICAL: Always update sessionState
+    },
+  };
+case ACTIONS.SET_MINI_MERLIN_SESSION_STATE:
+  console.log('🔧 REDUCER: SET_MINI_MERLIN_SESSION_STATE', action.payload);
+  
+  return {
+    ...state,
+    miniMerlin: {
+      ...state.miniMerlin,
+      sessionState: action.payload,
+    },
+  };
     case ACTIONS.CLEAR_RESULTS:
       return {
         ...state,
@@ -1538,7 +1983,609 @@ export function AppProvider({ children }) {
     });
   }, []);
 
-// ==================== FILE UPLOAD CALLBACKS ====================
+// Around line 1500
+const miniMerlinAIChat = useCallback(async (message) => {
+  const currentSession = state.miniMerlin?.currentSession;
+  
+  if (!currentSession?.session_id) {
+    addNotification('error', 'No active session');
+    return null;
+  }
+  
+  try {
+    const conversationHistory = state.miniMerlin?.aiChatHistory || [];
+    
+    // Add user message to history
+    dispatch({
+      type: ACTIONS.ADD_MINI_MERLIN_AI_MESSAGE,
+      payload: { role: 'user', content: message, timestamp: Date.now() }
+    });
+    
+    const result = await api.miniMerlinAIChat(
+      currentSession.session_id,
+      message,
+      conversationHistory
+    );
+    
+    // Add AI response to history
+    dispatch({
+      type: ACTIONS.ADD_MINI_MERLIN_AI_MESSAGE,
+      payload: { role: 'assistant', content: result.response, timestamp: Date.now() }
+    });
+    
+    return result.response;
+  } catch (error) {
+    addNotification('error', 'AI chat failed: ' + error.message);
+    throw error;
+  }
+}, [state.miniMerlin, addNotification, api, dispatch]);
+
+const clearMiniMerlinAIChat = useCallback(() => {
+  dispatch({ type: ACTIONS.CLEAR_MINI_MERLIN_AI_CHAT });
+}, [dispatch]);
+
+const toggleMiniMerlinAI = useCallback((enabled) => {
+  dispatch({ type: ACTIONS.TOGGLE_MINI_MERLIN_AI, payload: enabled });
+}, [dispatch]);
+const addSentenceToSession = useCallback(async (text, name = null) => {
+  // ✅ FIX: Get currentSession from state
+  const currentSession = state.miniMerlin?.currentSession;
+  
+  if (!currentSession?.session_id) {
+    addNotification('error', 'No active session');
+    return;
+  }
+  
+  try {
+    const result = await api.addSentenceToSession(currentSession.session_id, text, name);
+    
+    // Update session in state
+    const updatedSession = await api.getMiniMerlinSession(currentSession.session_id);
+    dispatch({ 
+      type: ACTIONS.SET_CURRENT_MINI_MERLIN_SESSION, 
+      payload: updatedSession.session 
+    });
+    
+    addNotification('success', 'Sentence added to session');
+    return result.sentence;
+  } catch (error) {
+    addNotification('error', 'Failed to add sentence: ' + error.message);
+    throw error;
+  }
+}, [state.miniMerlin, addNotification, api, dispatch]); // ✅ FIX: Add state.miniMerlin to dependencies
+const updateSentence = useCallback(async (sentenceId, scratchPad, name = null) => {
+  // ✅ FIX: Get currentSession from state
+  const currentSession = state.miniMerlin?.currentSession;
+  
+  if (!currentSession?.session_id) {
+    addNotification('error', 'No active session');
+    return;
+  }
+  
+  try {
+    const result = await api.updateSentence(
+      currentSession.session_id, 
+      sentenceId, 
+      scratchPad, 
+      name
+    );
+    
+    // Refresh session
+    const updatedSession = await api.getMiniMerlinSession(currentSession.session_id);
+    dispatch({ 
+      type: ACTIONS.SET_CURRENT_MINI_MERLIN_SESSION, 
+      payload: updatedSession.session 
+    });
+    
+    return result.sentence;
+  } catch (error) {
+    addNotification('error', 'Failed to update sentence: ' + error.message);
+    throw error;
+  }
+}, [state.miniMerlin, addNotification, api, dispatch]); // ✅ FIX: Add state.miniMerlin to dependencies
+const deleteSentence = useCallback(async (sentenceId) => {
+  // ✅ FIX: Get currentSession from state
+  const currentSession = state.miniMerlin?.currentSession;
+  
+  if (!currentSession?.session_id) {
+    addNotification('error', 'No active session');
+    return;
+  }
+  
+  try {
+    await api.deleteSentence(currentSession.session_id, sentenceId);
+    
+    // Refresh session
+    const updatedSession = await api.getMiniMerlinSession(currentSession.session_id);
+    dispatch({ 
+      type: ACTIONS.SET_CURRENT_MINI_MERLIN_SESSION, 
+      payload: updatedSession.session 
+    });
+    
+    addNotification('success', 'Sentence deleted');
+  } catch (error) {
+    addNotification('error', 'Failed to delete sentence: ' + error.message);
+    throw error;
+  }
+}, [state.miniMerlin, addNotification, api, dispatch]); // ✅ FIX: Add state.miniMerlin to dependencies
+const saveSentenceSolution = useCallback(async (sentenceId, solutionText, type = 'manual', metadata = {}) => {
+  // ✅ FIX: Get currentSession from state
+  const currentSession = state.miniMerlin?.currentSession;
+  
+  if (!currentSession?.session_id) {
+    addNotification('error', 'No active session');
+    return;
+  }
+  
+  try {
+    const result = await api.saveSentenceSolution(
+      currentSession.session_id,
+      sentenceId,
+      solutionText,
+      type,
+      metadata
+    );
+    
+    // Refresh session
+    const updatedSession = await api.getMiniMerlinSession(currentSession.session_id);
+    dispatch({ 
+      type: ACTIONS.SET_CURRENT_MINI_MERLIN_SESSION, 
+      payload: updatedSession.session 
+    });
+    
+    addNotification('success', 'Solution saved');
+    return result.solution;
+  } catch (error) {
+    addNotification('error', 'Failed to save solution: ' + error.message);
+    throw error;
+  }
+}, [state.miniMerlin, addNotification, api, dispatch]); // ✅ FIX: Add state.miniMerlin to dependencies
+const getMiniMerlinSession = useCallback(async (sessionId) => {
+  try {
+    const result = await api.getMiniMerlinSession(sessionId);
+    
+    // Update current session
+    dispatch({ 
+      type: ACTIONS.SET_CURRENT_MINI_MERLIN_SESSION, 
+      payload: result.session
+    });
+    
+    // Update session state
+    dispatch({
+      type: ACTIONS.SET_MINI_MERLIN_SESSION_STATE,
+      payload: {
+        original_pool: result.session.original_pool_str,
+        current_pool: result.session.current_pool_str,
+        used_letters: result.session.scratch_pad,
+        spoilage: result.session.spoilage || 0,
+        letters_remaining: result.session.remaining_letters || 0
+      }
+    });
+    
+    return result.session;
+  } catch (error) {
+    addNotification('error', 'Failed to load session: ' + error.message);
+    throw error;
+  }
+}, [api, addNotification, dispatch]);
+const createMiniMerlinSession = useCallback(async () => {
+  try {
+    dispatch({ type: ACTIONS.SET_LOADING, payload: { key: 'miniMerlin', value: true } });
+    
+    const result = await api.createMiniMerlinSession();
+    
+    dispatch({ 
+      type: ACTIONS.SET_CURRENT_MINI_MERLIN_SESSION, 
+      payload: result 
+    });
+    
+    addNotification('success', 'Mini-Merlin session created');
+    
+    return result;
+  } catch (error) {
+    addNotification('error', 'Failed to create Mini-Merlin session: ' + error.message);
+    throw error;
+  } finally {
+    dispatch({ type: ACTIONS.SET_LOADING, payload: { key: 'miniMerlin', value: false } });
+  }
+}, [api, addNotification, dispatch]);
+
+// In AppContext.jsx, in the loadTextIntoMiniMerlin function, add logging:
+
+const loadTextIntoMiniMerlin = useCallback(async (text, sessionId = null) => {
+  try {
+    dispatch({ type: ACTIONS.SET_LOADING, payload: { key: 'miniMerlinLoad', value: true } });
+    
+    const result = await api.loadTextIntoMiniMerlin(text, sessionId);
+    
+    console.log('🔥 API RESPONSE:', result); // ← ADD THIS
+    console.log('🔥 Pool string:', result.pool_string); // ← ADD THIS
+    console.log('🔥 Pool size:', result.pool_size); // ← ADD THIS
+    
+    // Update session data
+    dispatch({ 
+      type: ACTIONS.UPDATE_MINI_MERLIN_SESSION, 
+      payload: {
+        session_id: result.session_id,
+        original_text: result.original_text,
+        original_pool_str: result.pool_string,
+        pool_size: result.pool_size,
+        scratch_pad: '',
+        current_words: []
+      }
+    });
+    
+    // ✅ FIX: Also set session state for components to use
+    dispatch({
+      type: ACTIONS.SET_MINI_MERLIN_SESSION_STATE,
+      payload: {
+        original_pool: result.pool_string,
+        current_pool: result.pool_string,
+        used_letters: '',
+        spoilage: 0,
+        letters_remaining: result.pool_size
+      }
+    });
+    
+    addNotification('success', `Loaded ${result.pool_size} letters into pool`);
+    
+    return result;
+  } catch (error) {
+    addNotification('error', 'Failed to load text: ' + error.message);
+    throw error;
+  } finally {
+    dispatch({ type: ACTIONS.SET_LOADING, payload: { key: 'miniMerlinLoad', value: false } });
+  }
+}, [api, addNotification, dispatch]);
+// FIXED: updateMiniMerlinScratchPad
+const updateMiniMerlinScratchPad = useCallback(async (sessionId, text) => {
+  try {
+    const result = await api.updateMiniMerlinScratchPad(sessionId, text);
+    
+    // Backend returns: { success, scratch_pad, spoilage, remaining_letters, remaining_pool, error }
+    if (!result.success) {
+      addNotification('warning', result.error || 'Invalid letters used');
+      return result;
+    }
+    
+    dispatch({ 
+      type: ACTIONS.UPDATE_MINI_MERLIN_SESSION, 
+      payload: {
+        scratch_pad: result.scratch_pad,
+        spoilage: result.spoilage,
+        remaining_letters: result.remaining_letters,
+        current_pool_str: result.remaining_pool
+      }
+    });
+    
+    return result;
+  } catch (error) {
+    addNotification('error', 'Failed to update scratch pad: ' + error.message);
+    throw error;
+  }
+}, [api, addNotification, dispatch]);
+
+// FIXED: getMiniMerlinSuggestions
+const getMiniMerlinSuggestions = useCallback(async (sessionId, minLength = 2, maxResults = 100) => {
+  try {
+    dispatch({ type: ACTIONS.SET_LOADING, payload: { key: 'miniMerlinSuggestions', value: true } });
+    
+    const result = await api.getMiniMerlinSuggestions(sessionId, minLength, maxResults);
+    
+    // Backend returns: { success, count, suggestions: [{word, length, freq_score, context_score}] }
+    dispatch({ 
+      type: ACTIONS.SET_MINI_MERLIN_SUGGESTIONS, 
+      payload: {
+        suggestions: result.suggestions || [],
+        count: result.count || 0
+      }
+    });
+    
+    return result;
+  } catch (error) {
+    addNotification('error', 'Failed to get suggestions: ' + error.message);
+    throw error;
+  } finally {
+    dispatch({ type: ACTIONS.SET_LOADING, payload: { key: 'miniMerlinSuggestions', value: false } });
+  }
+}, [api, addNotification, dispatch]);
+
+// FIXED: getMiniMerlinSolutions
+const getMiniMerlinSolutions = useCallback(async (sessionId, maxWordsPerSolution = 10, maxResults = 50) => {
+  try {
+    dispatch({ type: ACTIONS.SET_LOADING, payload: { key: 'miniMerlinSolutions', value: true } });
+    
+    const result = await api.getMiniMerlinSolutions(sessionId, maxWordsPerSolution, maxResults);
+    
+    // ✅ FIX: Dispatch solutions to state
+    dispatch({ 
+      type: ACTIONS.SET_MINI_MERLIN_SOLUTIONS, 
+      payload: result.solutions || []
+    });
+    
+    addNotification('success', `Found ${result.count || 0} multi-word solutions`);
+    
+    return result;
+  } catch (error) {
+    addNotification('error', 'Failed to get solutions: ' + error.message);
+    throw error;
+  } finally {
+    dispatch({ type: ACTIONS.SET_LOADING, payload: { key: 'miniMerlinSolutions', value: false } });
+  }
+}, [api, addNotification, dispatch]);
+// FIXED: addMiniMerlinNote
+const addMiniMerlinNote = useCallback(async (sessionId, text, tags = null) => {
+  try {
+    const result = await api.addMiniMerlinNote(sessionId, text, tags);
+    
+    // Backend returns: { success, note: {id, text, tags, created_at} }
+    dispatch({ 
+      type: ACTIONS.ADD_MINI_MERLIN_NOTE, 
+      payload: result.note
+    });
+    
+    addNotification('success', 'Note added');
+    
+    return result;
+  } catch (error) {
+    addNotification('error', 'Failed to add note: ' + error.message);
+    throw error;
+  }
+}, [api, addNotification, dispatch]);
+
+// FIXED: getMiniMerlinNotes - Handle 404 gracefully since endpoint doesn't exist yet
+const getMiniMerlinNotes = useCallback(async (sessionId) => {
+  try {
+    const result = await api.getMiniMerlinNotes(sessionId);
+    
+    // Backend returns: { notes: [...] }
+    dispatch({ 
+      type: ACTIONS.SET_MINI_MERLIN_NOTES, 
+      payload: {
+        notes: result.notes || []
+      }
+    });
+    
+    return result;
+  } catch (error) {
+    // If 404, endpoint doesn't exist yet - silently set empty notes
+    if (error.message.includes('404') || error.message.includes('Not Found')) {
+      console.log('ℹ️  Notes endpoint not yet implemented, using empty notes');
+      dispatch({ 
+        type: ACTIONS.SET_MINI_MERLIN_NOTES, 
+        payload: { notes: [] }
+      });
+      return { notes: [] };
+    }
+    
+    // For other errors, show notification
+    addNotification('error', 'Failed to get notes: ' + error.message);
+    throw error;
+  }
+}, [api, addNotification, dispatch]);
+// FIXED: listMiniMerlinSessions - Handle 404 gracefully
+const listMiniMerlinSessions = useCallback(async () => {
+  try {
+    const result = await api.listMiniMerlinSessions();
+    
+    // Backend returns: { success, sessions: [...], total }
+    dispatch({ 
+      type: ACTIONS.SET_MINI_MERLIN_SESSIONS_LIST, 
+      payload: {
+        sessions: result.sessions || []
+      }
+    });
+    
+    return result;
+  } catch (error) {
+    // If 404, endpoint doesn't exist yet - silently set empty sessions
+    if (error.message.includes('404') || error.message.includes('Not Found')) {
+      console.log('ℹ️  Sessions list endpoint not yet implemented, using empty list');
+      dispatch({ 
+        type: ACTIONS.SET_MINI_MERLIN_SESSIONS_LIST, 
+        payload: { sessions: [] }
+      });
+      return { sessions: [], total: 0 };
+    }
+    
+    // For other errors, show notification
+    addNotification('error', 'Failed to list sessions: ' + error.message);
+    throw error;
+  }
+}, [api, addNotification, dispatch]);
+
+const deleteMiniMerlinNote = useCallback(async (sessionId, noteId) => {
+  try {
+    const result = await api.deleteMiniMerlinNote(sessionId, noteId);
+    
+    dispatch({ 
+      type: ACTIONS.DELETE_MINI_MERLIN_NOTE, 
+      payload: { noteId } 
+    });
+    
+    return result;
+  } catch (error) {
+    addNotification('error', 'Failed to delete note: ' + error.message);
+    throw error;
+  }
+}, [api, addNotification, dispatch]);
+
+
+const exportMiniMerlinSession = useCallback(async (sessionId, filename) => {
+  try {
+    const result = await api.exportMiniMerlinSession(sessionId, filename);
+    
+    addNotification('success', `Session exported to ${filename}`);
+    
+    return result;
+  } catch (error) {
+    addNotification('error', 'Failed to export session: ' + error.message);
+    throw error;
+  }
+}, [api, addNotification]);
+
+
+const deleteMiniMerlinSession = useCallback(async (sessionId) => {
+  try {
+    await api.deleteMiniMerlinSession(sessionId);
+    
+    dispatch({ 
+      type: ACTIONS.DELETE_MINI_MERLIN_SESSION, 
+      payload: { sessionId } 
+    });
+    
+    addNotification('success', 'Session deleted');
+  } catch (error) {
+    addNotification('error', 'Failed to delete session: ' + error.message);
+    throw error;
+  }
+}, [api, addNotification, dispatch]);
+
+const getMiniMerlinSessionState = useCallback(async (sessionId) => {
+  try {
+    const result = await api.getMiniMerlinSessionState(sessionId);
+    
+    dispatch({ 
+      type: ACTIONS.SET_MINI_MERLIN_SESSION_STATE, 
+      payload: result 
+    });
+    
+    return result;
+  } catch (error) {
+    addNotification('error', 'Failed to get session state: ' + error.message);
+    throw error;
+  }
+}, [api, addNotification, dispatch]);
+
+const clearMiniMerlinSession = useCallback(() => {
+  dispatch({ type: ACTIONS.CLEAR_MINI_MERLIN_SESSION });
+  addNotification('info', 'Mini-Merlin session cleared');
+}, [dispatch, addNotification]);
+
+
+
+const getAnagramSuggestions = useCallback(async (sourceText, maxSuggestions = 20) => {
+  try {
+    dispatch({ type: ACTIONS.SET_LOADING, payload: { key: 'anagramSuggestions', value: true } });
+    
+    const result = await api.getAnagramSuggestions(sourceText, 'interactive', maxSuggestions);
+    
+    dispatch({ type: ACTIONS.SET_ANAGRAM_SUGGESTIONS, payload: result });
+    
+    addNotification('success', `Found ${result.complete_suggestions.length} anagram suggestions`);
+    
+    return result;
+  } catch (error) {
+    addNotification('error', 'Failed to get anagram suggestions: ' + error.message);
+    throw error;
+  } finally {
+    dispatch({ type: ACTIONS.SET_LOADING, payload: { key: 'anagramSuggestions', value: false } });
+  }
+}, [api, addNotification, dispatch]);
+
+const getAIAnagramSuggestions = useCallback(async (sourceText, targetEntities = [], maxSuggestions = 10) => {
+  try {
+    dispatch({ type: ACTIONS.SET_LOADING, payload: { key: 'aiAnagramSuggestions', value: true } });
+    
+    console.log('🤖 Requesting AI anagram suggestions:', {
+      sourceText: sourceText.slice(0, 50),
+      targetEntities,
+      maxSuggestions
+    });
+    
+    const result = await api.getAIAnagramSuggestions(sourceText, targetEntities, maxSuggestions);
+    
+    dispatch({ type: ACTIONS.SET_AI_ANAGRAM_SUGGESTIONS, payload: result });
+    
+    addNotification('success', `AI generated ${result.ai_suggestions.length} suggestions`);
+    
+    return result;
+  } catch (error) {
+    console.error('AI anagram error:', error);
+    addNotification('error', 'Failed to get AI anagram suggestions: ' + error.message);
+    throw error;
+  } finally {
+    dispatch({ type: ACTIONS.SET_LOADING, payload: { key: 'aiAnagramSuggestions', value: false } });
+  }
+}, [api, addNotification, dispatch]);
+
+const explainAnagram = useCallback(async (solution, sourceText, spoilage = "") => {
+  try {
+    dispatch({ type: ACTIONS.SET_LOADING, payload: { key: 'anagramExplanation', value: true } });
+    
+    const result = await api.explainAnagram(solution, sourceText, spoilage);
+    
+    dispatch({ type: ACTIONS.SET_ANAGRAM_EXPLANATION, payload: result });
+    
+    addNotification('success', 'Anagram explanation generated');
+    
+    return result;
+  } catch (error) {
+    addNotification('error', 'Failed to explain anagram: ' + error.message);
+    throw error;
+  } finally {
+    dispatch({ type: ACTIONS.SET_LOADING, payload: { key: 'anagramExplanation', value: false } });
+  }
+}, [api, addNotification, dispatch]);
+
+const validateAnagram = useCallback(async (sourceText, proposedSolution) => {
+  try {
+    dispatch({ type: ACTIONS.SET_LOADING, payload: { key: 'anagramValidation', value: true } });
+    
+    const result = await api.validateAnagram(sourceText, proposedSolution);
+    
+    dispatch({ type: ACTIONS.SET_ANAGRAM_VALIDATION, payload: result });
+    
+    if (result.valid) {
+      const spoilageStr = result.spoilage.length > 0 
+        ? ` (${result.spoilage.length} letters unused)`
+        : ' (Perfect match!)';
+      
+      addNotification('success', `Valid anagram${spoilageStr}`);
+    } else {
+      addNotification('error', `Invalid: ${result.error}`);
+    }
+    
+    return result;
+  } catch (error) {
+    addNotification('error', 'Failed to validate anagram: ' + error.message);
+    throw error;
+  } finally {
+    dispatch({ type: ACTIONS.SET_LOADING, payload: { key: 'anagramValidation', value: false } });
+  }
+}, [api, addNotification, dispatch]);
+
+const getAnagramStats = useCallback(async () => {
+  try {
+    const result = await api.getAnagramStats();
+    
+    dispatch({ type: ACTIONS.SET_ANAGRAM_STATS, payload: result });
+    
+    return result;
+  } catch (error) {
+    addNotification('error', 'Failed to load anagram stats: ' + error.message);
+    throw error;
+  }
+}, [api, addNotification, dispatch]);
+
+const batchAnagramSuggestions = useCallback(async (sourceTexts, useAI = false, maxSuggestionsPerText = 10) => {
+  try {
+    dispatch({ type: ACTIONS.SET_LOADING, payload: { key: 'batchAnagrams', value: true } });
+    
+    const result = await api.batchAnagramSuggestions(sourceTexts, useAI, maxSuggestionsPerText);
+    
+    dispatch({ type: ACTIONS.SET_BATCH_ANAGRAM_RESULTS, payload: result });
+    
+    addNotification('success', `Processed ${result.processed} texts with anagram analysis`);
+    
+    return result;
+  } catch (error) {
+    addNotification('error', 'Failed to process batch anagrams: ' + error.message);
+    throw error;
+  } finally {
+    dispatch({ type: ACTIONS.SET_LOADING, payload: { key: 'batchAnagrams', value: false } });
+  }
+}, [api, addNotification, dispatch]);
 
 const uploadWorkFile = useCallback(async (file, options = {}) => {
   const {
@@ -3637,21 +4684,48 @@ const value = {
   updateSessionTabState,
   autoSaveSession,
   closeSession,
+    miniMerlinAIChat,
+  clearMiniMerlinAIChat,
+  toggleMiniMerlinAI,
   createSession,
   loadSession,
   listSessions,
   deleteSession,
   uploadWorkFile,
   getAuthorsForUpload,
+    getMiniMerlinSession,  // ← ADD THIS
+  addSentenceToSession,
+  updateSentence,
+  deleteSentence,
+  saveSentenceSolution,
   state,
   dispatch,
   uploadResultToDrive,  // ← ADD THIS
-
+  createMiniMerlinSession,
+  loadTextIntoMiniMerlin,
+  updateMiniMerlinScratchPad,
+  getMiniMerlinSuggestions,
+  getMiniMerlinSolutions,
+  addMiniMerlinNote,
+  deleteMiniMerlinNote,
+  getMiniMerlinNotes,
+  exportMiniMerlinSession,
+  listMiniMerlinSessions,
+  deleteMiniMerlinSession,
+  getMiniMerlinSessionState,
+  clearMiniMerlinSession,
   api,
   addNotification,
   toggleModal,
   selectAuthor,
   loadWork,
+  // Add to context value object:
+getAnagramSuggestions,
+getAIAnagramSuggestions,
+explainAnagram,
+validateAnagram,
+getAnagramStats,
+batchAnagramSuggestions,
   loadAllEditions,
   saveWorkText,
   createAutoSegmentation,
@@ -3881,12 +4955,70 @@ export function useAPI() {
     pollJobStatus
   };
 }
-
+export function useAnagram() {
+  const {
+    state,
+    getAnagramSuggestions,
+    getAIAnagramSuggestions,
+    explainAnagram,
+    validateAnagram,
+    getAnagramStats,
+    batchAnagramSuggestions,
+  } = useAppState();
+  
+  return {
+    anagramState: state.anagram,
+    getAnagramSuggestions,
+    getAIAnagramSuggestions,
+    explainAnagram,
+    validateAnagram,
+    getAnagramStats,
+    batchAnagramSuggestions,
+  };
+}
 // Hook for notifications
 export function useNotifications() {
   const { addNotification, state } = useAppState();
   return {
     addNotification,
     notifications: state.ui.notifications,
+  };
+}
+
+
+
+export function useMiniMerlin() {
+  const {
+    state,
+    createMiniMerlinSession,
+    loadTextIntoMiniMerlin,
+    updateMiniMerlinScratchPad,
+    getMiniMerlinSuggestions,
+    getMiniMerlinSolutions,
+    addMiniMerlinNote,
+    deleteMiniMerlinNote,
+    getMiniMerlinNotes,
+    exportMiniMerlinSession,
+    listMiniMerlinSessions,
+    deleteMiniMerlinSession,
+    getMiniMerlinSessionState,
+    clearMiniMerlinSession,
+  } = useAppState();
+  
+  return {
+    miniMerlinState: state.miniMerlin,
+    createMiniMerlinSession,
+    loadTextIntoMiniMerlin,
+    updateMiniMerlinScratchPad,
+    getMiniMerlinSuggestions,
+    getMiniMerlinSolutions,
+    addMiniMerlinNote,
+    deleteMiniMerlinNote,
+    getMiniMerlinNotes,
+    exportMiniMerlinSession,
+    listMiniMerlinSessions,
+    deleteMiniMerlinSession,
+    getMiniMerlinSessionState,
+    clearMiniMerlinSession,
   };
 }
