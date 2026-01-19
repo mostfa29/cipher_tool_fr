@@ -546,7 +546,7 @@ const handleScratchPadChange = (e) => {
     const totalSentences = sentences.length;
     const solvedSentences = sentences.filter(s => s.solutions && s.solutions.length > 0).length;
 
-    if (totalSentences === 0) return { status: 'empty', text: 'Empty', color: 'text-gray-400' };
+    // if (totalSentences === 0) return { status: 'empty', text: 'Empty', color: 'text-gray-400' };
     if (solvedSentences === totalSentences) return { status: 'completed', text: 'Completed', color: 'text-green-400' };
     if (solvedSentences > 0) return { status: 'in_progress', text: 'In Progress', color: 'text-yellow-400' };
     return { status: 'active', text: 'Active', color: 'text-blue-400' };
@@ -1183,7 +1183,7 @@ const handleScratchPadChange = (e) => {
                         </div>
                       )}
 
-                      {/* Stats */}
+                      {/* Stats
                       <div className="grid grid-cols-2 gap-2 mb-3">
                         <div className="text-xs">
                           <div className="text-purple-400">Sentences</div>
@@ -1193,7 +1193,7 @@ const handleScratchPadChange = (e) => {
                           <div className="text-purple-400">Notes</div>
                           <div className="text-white font-semibold">{session.notes_count || 0}</div>
                         </div>
-                      </div>
+                      </div> */}
 
                       {/* Dates */}
                       <div className="text-xs text-purple-400 mb-3 space-y-1">

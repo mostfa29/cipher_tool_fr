@@ -25,8 +25,8 @@ function mapSegmentationType(mode) {
   return segmentTypeMap[mode] || 'paragraph';
 }
 // ==================== CONFIGURATION ====================
-// const API_BASE_URL = 'http://localhost:8000'
-const API_BASE_URL = 'http://192.99.245.215:8000'
+const API_BASE_URL = 'http://localhost:8000'
+// const API_BASE_URL = 'http://192.99.245.215:8000'
 
 // ==================== API CLIENT ====================
 class APIClient {
@@ -173,7 +173,6 @@ getMiniMerlinSuggestions(sessionId, minLength = 2, maxResults = 100) {
 getMiniMerlinSolutions(sessionId, maxWordsPerSolution = 5, maxResults = 50) {
   return this.request(`/api/mini-merlin/session/${sessionId}/solutions?max_words_per_solution=${maxWordsPerSolution}&max_results=${maxResults}`);
 }
-
 addMiniMerlinNote(sessionId, text, tags = null) {
   return this.request('/api/mini-merlin/session/note/add', {
     method: 'POST',
