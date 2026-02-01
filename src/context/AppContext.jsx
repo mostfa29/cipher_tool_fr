@@ -25,8 +25,8 @@ function mapSegmentationType(mode) {
   return segmentTypeMap[mode] || 'paragraph';
 }
 // ==================== CONFIGURATION ====================
-// const API_BASE_URL = 'http://localhost:8000'
-const API_BASE_URL = 'http://192.99.245.215:8000'
+const API_BASE_URL = 'http://localhost:8000'
+// const API_BASE_URL = 'http://192.99.245.215:8000'
 
 // ==================== API CLIENT ====================
 class APIClient {
@@ -165,13 +165,38 @@ updateMiniMerlinScratchPad(sessionId, text) {
     }),
   });
 }
-
-getMiniMerlinSuggestions(sessionId, minLength = 2, maxResults = 100) {
-  return this.request(`/api/mini-merlin/session/${sessionId}/suggestions?min_length=${minLength}&max_results=${maxResults}`);
+getMiniMerlinSuggestions(sessionId, sentenceId, minLength = 4, maxResults = 10000, rawMode = true) {
+  // ✅ FIX: sentenceId is now REQUIRED
+  if (!sentenceId) {
+    throw new Error('sentence_id is required to get suggestions');
+  }
+  
+  // FIX #4: Increased maxResults to 10000
+  // FIX #5: Added rawMode parameter (default true = no statistical bias)
+  // FIX #2: minLength defaults to 4 (filters garbage words)
+  return this.request(
+    `/api/mini-merlin/session/${sessionId}/suggestions?sentence_id=${sentenceId}&min_length=${minLength}&max_results=${maxResults}&raw_mode=${rawMode}`
+  );
+}
+setMiniMerlinRawMode(sessionId, enabled = true) {
+  // FIX #5: Toggle raw mode for unbiased results
+  return this.request(`/api/mini-merlin/session/${sessionId}/set-raw-mode`, {
+    method: 'POST',
+    body: JSON.stringify({ enabled }),
+  });
 }
 
-getMiniMerlinSolutions(sessionId, maxWordsPerSolution = 5, maxResults = 50) {
-  return this.request(`/api/mini-merlin/session/${sessionId}/solutions?max_words_per_solution=${maxWordsPerSolution}&max_results=${maxResults}`);
+
+
+getMiniMerlinSolutions(sessionId, sentenceId, maxWordsPerSolution = 10, maxResults = 50, timeout = 10) {
+  // ✅ FIX: sentenceId is now REQUIRED
+  if (!sentenceId) {
+    throw new Error('sentence_id is required to get solutions');
+  }
+  
+  return this.request(
+    `/api/mini-merlin/session/${sessionId}/solutions?sentence_id=${sentenceId}&max_words_per_solution=${maxWordsPerSolution}&max_results=${maxResults}&timeout=${timeout}`
+  );
 }
 addMiniMerlinNote(sessionId, text, tags = null) {
   return this.request('/api/mini-merlin/session/note/add', {
@@ -887,6 +912,8 @@ export const ACTIONS = {
   // Authors & Works
   // Around line 200 in ACTIONS
 SET_MINI_MERLIN_AI_CHAT: 'SET_MINI_MERLIN_AI_CHAT',
+SET_MINI_MERLIN_RAW_MODE: 'SET_MINI_MERLIN_RAW_MODE',
+
 ADD_MINI_MERLIN_AI_MESSAGE: 'ADD_MINI_MERLIN_AI_MESSAGE',
 CLEAR_MINI_MERLIN_AI_CHAT: 'CLEAR_MINI_MERLIN_AI_CHAT',
 TOGGLE_MINI_MERLIN_AI: 'TOGGLE_MINI_MERLIN_AI',
@@ -1010,6 +1037,15 @@ function appReducer(state, action) {
           authors: action.payload,
         },
       };
+    case ACTIONS.SET_MINI_MERLIN_RAW_MODE:
+  return {
+    ...state,
+    miniMerlin: {
+      ...state.miniMerlin,
+      rawMode: action.payload,
+    },
+  };
+
       case ACTIONS.SET_MINI_MERLIN_AI_CHAT:
   return {
     ...state,
@@ -2264,21 +2300,43 @@ const updateMiniMerlinScratchPad = useCallback(async (sessionId, text) => {
   }
 }, [api, addNotification, dispatch]);
 
-// FIXED: getMiniMerlinSuggestions
-const getMiniMerlinSuggestions = useCallback(async (sessionId, minLength = 2, maxResults = 100) => {
+const getMiniMerlinSuggestions = useCallback(async (sessionId, sentenceId, minLength = 4, maxResults = 10000, rawMode = true) => {
+  // ✅ FIX: Validate sentenceId is provided
+  if (!sentenceId) {
+    addNotification('error', 'No sentence selected. Please select a sentence first.');
+    return { success: false, count: 0, suggestions: [] };
+  }
+  
   try {
     dispatch({ type: ACTIONS.SET_LOADING, payload: { key: 'miniMerlinSuggestions', value: true } });
     
-    const result = await api.getMiniMerlinSuggestions(sessionId, minLength, maxResults);
+    // Use rawMode from state if not explicitly provided
+    const effectiveRawMode = rawMode ?? state.miniMerlin?.rawMode ?? true;
     
-    // Backend returns: { success, count, suggestions: [{word, length, freq_score, context_score}] }
+    console.log(`🔍 Getting suggestions for sentence: ${sentenceId}`);
+    console.log(`   Settings: minLength=${minLength}, maxResults=${maxResults}, rawMode=${effectiveRawMode}`);
+    
+    // FIX #4: maxResults now 10000 (was 100)
+    // FIX #5: rawMode parameter added
+    // FIX #2: minLength defaults to 4 (filters garbage)
+    const result = await api.getMiniMerlinSuggestions(sessionId, sentenceId, minLength, maxResults, effectiveRawMode);
+    
+    // Backend returns: { success, count, suggestions, sentence_id, sentence_name, raw_mode }
     dispatch({ 
       type: ACTIONS.SET_MINI_MERLIN_SUGGESTIONS, 
       payload: {
         suggestions: result.suggestions || [],
-        count: result.count || 0
+        count: result.count || 0,
+        sentence_id: result.sentence_id,
+        sentence_name: result.sentence_name,
+        rawMode: result.raw_mode,
+        minLength: result.min_length,
+        maxResults: result.max_results
       }
     });
+    
+    console.log(`✅ Got ${result.count} suggestions for "${result.sentence_name}"`);
+    console.log(`   Raw mode: ${result.raw_mode ? 'ON (unbiased)' : 'OFF (statistical scoring)'}`);
     
     return result;
   } catch (error) {
@@ -2287,22 +2345,69 @@ const getMiniMerlinSuggestions = useCallback(async (sessionId, minLength = 2, ma
   } finally {
     dispatch({ type: ACTIONS.SET_LOADING, payload: { key: 'miniMerlinSuggestions', value: false } });
   }
-}, [api, addNotification, dispatch]);
+}, [api, addNotification, dispatch, state.miniMerlin?.rawMode]);
+const setMiniMerlinRawMode = useCallback(async (enabled = true) => {
+  const currentSession = state.miniMerlin?.currentSession;
+  
+  if (!currentSession?.session_id) {
+    addNotification('error', 'No active session');
+    return null;
+  }
+  
+  try {
+    console.log(`🔧 Setting raw mode to: ${enabled ? 'ON (unbiased)' : 'OFF (statistical scoring)'}`);
+    
+    const result = await api.setMiniMerlinRawMode(currentSession.session_id, enabled);
+    
+    // Update state
+    dispatch({
+      type: ACTIONS.SET_MINI_MERLIN_RAW_MODE,
+      payload: enabled
+    });
+    
+    const modeDesc = enabled ? 'Raw mode (unbiased results)' : 'Smart mode (statistical scoring)';
+    addNotification('success', `Switched to ${modeDesc}`);
+    
+    return result;
+  } catch (error) {
+    addNotification('error', 'Failed to set raw mode: ' + error.message);
+    throw error;
+  }
+}, [state.miniMerlin, addNotification, api, dispatch]);
 
-// FIXED: getMiniMerlinSolutions
-const getMiniMerlinSolutions = useCallback(async (sessionId, maxWordsPerSolution = 10, maxResults = 50) => {
+// FIXED: getMiniMerlinSolutions - now requires sentenceId
+const getMiniMerlinSolutions = useCallback(async (sessionId, sentenceId, maxWordsPerSolution = 10, maxResults = 50, timeout = 10) => {
+  // ✅ FIX: Validate sentenceId is provided
+  if (!sentenceId) {
+    addNotification('error', 'No sentence selected. Please select a sentence first.');
+    return { success: false, count: 0, solutions: [] };
+  }
+  
   try {
     dispatch({ type: ACTIONS.SET_LOADING, payload: { key: 'miniMerlinSolutions', value: true } });
     
-    const result = await api.getMiniMerlinSolutions(sessionId, maxWordsPerSolution, maxResults);
+    console.log(`🔍 Getting solutions for sentence: ${sentenceId}`);
     
-    // ✅ FIX: Dispatch solutions to state
+    const result = await api.getMiniMerlinSolutions(sessionId, sentenceId, maxWordsPerSolution, maxResults, timeout);
+    
+    // ✅ FIX: Dispatch solutions to state with sentence metadata
     dispatch({ 
       type: ACTIONS.SET_MINI_MERLIN_SOLUTIONS, 
-      payload: result.solutions || []
+      payload: {
+        solutions: result.solutions || [],
+        count: result.count || 0,
+        complete_count: result.complete_count || 0,
+        partial_count: result.partial_count || 0,
+        sentence_id: result.sentence_id,
+        sentence_name: result.sentence_name,
+        metadata: result.metadata
+      }
     });
     
-    addNotification('success', `Found ${result.count || 0} multi-word solutions`);
+    console.log(`✅ Got ${result.count} solutions for "${result.sentence_name}"`);
+    console.log(`   Complete: ${result.complete_count}, Partial: ${result.partial_count}`);
+    
+    addNotification('success', `Found ${result.count} solutions (${result.complete_count} complete, ${result.partial_count} partial)`);
     
     return result;
   } catch (error) {
@@ -4684,6 +4789,7 @@ const value = {
   autoSaveSession,
   closeSession,
     miniMerlinAIChat,
+    setMiniMerlinRawMode,
   clearMiniMerlinAIChat,
   toggleMiniMerlinAI,
   createSession,
@@ -4985,7 +5091,6 @@ export function useNotifications() {
 }
 
 
-
 export function useMiniMerlin() {
   const {
     state,
@@ -5002,10 +5107,12 @@ export function useMiniMerlin() {
     deleteMiniMerlinSession,
     getMiniMerlinSessionState,
     clearMiniMerlinSession,
+    setMiniMerlinRawMode,  // FIX #5: Added
   } = useAppState();
   
   return {
     miniMerlinState: state.miniMerlin,
+    rawMode: state.miniMerlin?.rawMode ?? true,  // FIX #5: Expose rawMode
     createMiniMerlinSession,
     loadTextIntoMiniMerlin,
     updateMiniMerlinScratchPad,
@@ -5019,5 +5126,6 @@ export function useMiniMerlin() {
     deleteMiniMerlinSession,
     getMiniMerlinSessionState,
     clearMiniMerlinSession,
+    setMiniMerlinRawMode,  // FIX #5: Added
   };
 }

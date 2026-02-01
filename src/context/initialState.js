@@ -84,15 +84,16 @@ anagram: {
   batchResults: null,
 },
 // Add to initial state:
-  miniMerlin: {
+miniMerlin: {
   currentSession: null,
   sessionState: null,
   suggestions: [],
   solutions: [],
   notes: [],
   sessionsList: [],
-  aiEnabled: false,  // ← ADD THIS
-  aiChatHistory: [], // ← ADD THIS
+  aiChatHistory: [],
+  aiEnabled: false,
+  rawMode: true,  // FIX #5: Default to raw mode (unbiased results)
 },
 
   // ==================== LIBRARY STATE ====================

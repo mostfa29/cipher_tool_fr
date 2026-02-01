@@ -1,11 +1,12 @@
 // frontend/src/components/MiniMerlin.jsx
 
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { 
   Play, RotateCcw, Save, FileText, Trash2, Copy, Check, AlertCircle,
   Sparkles, StickyNote, Download, Upload, X, ChevronDown, ChevronUp,
   Zap, List, Filter, Info, RefreshCw, Hash, Plus, Loader, Edit2, 
-  CheckCircle, Layers, Archive, Search, Calendar, Clock, FolderOpen
+  CheckCircle, Layers, Archive, Search, Calendar, Clock, FolderOpen,
+  ToggleLeft, ToggleRight, Settings, Database, BookOpen  // NEW: Added for fixes
 } from 'lucide-react';
 import { useAppState } from '../context/AppContext';
 
@@ -33,6 +34,7 @@ const MiniMerlin = () => {
       miniMerlinAIChat,
   clearMiniMerlinAIChat,
   toggleMiniMerlinAI,
+  setMiniMerlinRawMode,
     addNotification
   } = useAppState();
 
@@ -46,10 +48,15 @@ const MiniMerlin = () => {
   const [activeWorkspaceTab, setActiveWorkspaceTab] = useState('solver'); // 'solver' | 'ai' | 'history'
 const [aiMessage, setAiMessage] = useState('');
 const [isAISending, setIsAISending] = useState(false);
+const [hasFetchedSuggestions, setHasFetchedSuggestions] = useState(false);
+const [hasFetchedSolutions, setHasFetchedSolutions] = useState(false);
 
 // Get AI state from context
 const aiEnabled = miniMerlinState?.aiEnabled || false;
 const aiChatHistory = miniMerlinState?.aiChatHistory || [];
+
+// FIX #5: Get raw mode from context (default true = unbiased like boulter.com)
+const rawMode = miniMerlinState?.rawMode ?? true;
   // Session management
   const [sessions, setSessions] = useState([]);
   const [loadingSessions, setLoadingSessions] = useState(true);
@@ -87,8 +94,12 @@ const aiChatHistory = miniMerlinState?.aiChatHistory || [];
   // Filter/sort state
   const [filterMode, setFilterMode] = useState('all');
   const [sortMode, setSortMode] = useState('score');
-  const [minWordLength, setMinWordLength] = useState(2);
-  const [maxSuggestions, setMaxSuggestions] = useState(100);
+  const [minWordLength, setMinWordLength] = useState(4);      // FIX #2: Was 2, now 4
+  const [maxSuggestions, setMaxSuggestions] = useState(5000); // FIX #4: Was 100, now 5000
+  
+  // NEW: Display mode and settings panel
+  const [suggestionDisplayMode, setSuggestionDisplayMode] = useState('grouped'); // 'grouped' | 'flat'
+  const [showSettings, setShowSettings] = useState(false);
   
   // Message state
   const [error, setError] = useState('');
@@ -96,6 +107,7 @@ const aiChatHistory = miniMerlinState?.aiChatHistory || [];
   const [copiedIndex, setCopiedIndex] = useState(null);
 
   const scratchPadRef = useRef(null);
+const previousScratchPadRef = useRef('');
 
   // ==================== EFFECTS ====================
   
@@ -103,6 +115,7 @@ const aiChatHistory = miniMerlinState?.aiChatHistory || [];
   useEffect(() => {
     loadSessionsList();
   }, []);
+
 
   // Load sentences when session changes
   useEffect(() => {
@@ -119,13 +132,18 @@ const aiChatHistory = miniMerlinState?.aiChatHistory || [];
   }, [currentSession]);
 
   // Load active sentence data
-  useEffect(() => {
-    const activeSentence = sentences.find(s => s.id === activeSentenceId);
-    if (activeSentence) {
-      setOriginalText(activeSentence.original_text || '');
-      setScratchPad(activeSentence.scratch_pad || '');
-    }
-  }, [activeSentenceId, sentences]);
+// Load active sentence data
+useEffect(() => {
+  const activeSentence = sentences.find(s => s.id === activeSentenceId);
+  if (activeSentence) {
+    setOriginalText(activeSentence.original_text || '');
+    setScratchPad(activeSentence.scratch_pad || '');
+    
+    // Reset fetch flags when switching sentences
+    setHasFetchedSuggestions(false);
+    setHasFetchedSolutions(false);
+  }
+}, [activeSentenceId, sentences]);
 
   // Load notes when session changes
   useEffect(() => {
@@ -142,8 +160,26 @@ const aiChatHistory = miniMerlinState?.aiChatHistory || [];
     }
   }, [success]);
 
-  // ==================== SESSION MANAGEMENT FUNCTIONS ====================
-// Around line 300
+
+const handleRawModeToggle = async () => {
+  try {
+    const newMode = !rawMode;
+    await setMiniMerlinRawMode(newMode);
+    
+    // Refresh suggestions if we have them
+    if (hasFetchedSuggestions && currentSession?.session_id && activeSentenceId) {
+      setTimeout(() => refreshSuggestions(), 200);
+    }
+    
+    setSuccess(newMode 
+      ? 'Raw mode ON - Results sorted by length (like boulter.com)'
+      : 'Smart mode ON - Statistical scoring active'
+    );
+  } catch (err) {
+    setError('Failed to toggle raw mode: ' + err.message);
+  }
+};
+
 const handleAIChat = async () => {
   if (!aiMessage.trim()) return;
   
@@ -440,79 +476,209 @@ const handleScratchPadChange = (e) => {
       setError('Update failed: ' + err.message);
     }
   };
+// Wrap refresh handlers in useCallback for stable references
+const refreshSuggestions = useCallback(async () => {
+  if (!currentSession?.session_id || !activeSentenceId || isLoadingSuggestions) {
+    return;
+  }
 
-  const handleGetSuggestions = async () => {
-    if (!currentSession?.session_id) {
-      setError('No active session');
-      return;
-    }
-
-    if (isLoadingSuggestions) return;
-
-    try {
-      setIsLoadingSuggestions(true);
-      setError('');
-      
-      const result = await getMiniMerlinSuggestions(
-        currentSession.session_id,
-        minWordLength,
-        maxSuggestions
-      );
-
-      setSuggestions(result.suggestions || []);
-      
-      if (result.suggestions?.length > 0) {
-        setSuccess(`Found ${result.suggestions.length} suggestions`);
-      }
-      
-    } catch (err) {
-      setError('Failed to get suggestions: ' + err.message);
-    } finally {
-      setIsLoadingSuggestions(false);
-    }
-  };
-
-  const handleGetSolutions = async () => {
-    if (!currentSession?.session_id) {
-      setError('No active session');
-      return;
-    }
-
-    if (isLoadingSolutions) return;
-
-    try {
-      setIsLoadingSolutions(true);
-      setError('');
-      
-      const result = await getMiniMerlinSolutions(
-        currentSession.session_id,
-        10,
-        50
-      );
-      
-      setSolutions(result.solutions || []);
-      setSuccess(`Found ${result.solutions?.length || 0} solutions`);
-      
-    } catch (err) {
-      setError('Failed to get solutions: ' + err.message);
-    } finally {
-      setIsLoadingSolutions(false);
-    }
-  };
-
-  const handleAddWordToScratchPad = async (word) => {
-    const newScratchPad = scratchPad ? `${scratchPad} ${word}` : word;
-    setScratchPad(newScratchPad);
+  try {
+    setIsLoadingSuggestions(true);
     
-    if (currentSession?.session_id && activeSentenceId) {
-      try {
-        await handleUpdateSentence(activeSentenceId, newScratchPad);
-        setSuccess(`Added "${word}"`);
-      } catch (err) {
-        setError('Failed to add word: ' + err.message);
-      }
+    // FIX #4 & #5: Pass updated params including rawMode
+    const result = await getMiniMerlinSuggestions(
+      currentSession.session_id,
+      activeSentenceId,
+      minWordLength,
+      maxSuggestions,
+      rawMode  // FIX #5: Pass raw mode
+    );
+    setSuggestions(result.suggestions || []);
+  } catch (err) {
+    console.error('Failed to refresh suggestions:', err);
+  } finally {
+    setIsLoadingSuggestions(false);
+  }
+}, [
+  currentSession?.session_id,
+  activeSentenceId,
+  minWordLength,
+  maxSuggestions,
+  rawMode,  // FIX #5: Include in dependencies
+  isLoadingSuggestions,
+  getMiniMerlinSuggestions
+]);
+
+const refreshSolutions = useCallback(async () => {
+  if (!currentSession?.session_id || !activeSentenceId || isLoadingSolutions) {
+    return;
+  }
+
+  try {
+    setIsLoadingSolutions(true);
+    const result = await getMiniMerlinSolutions(
+      currentSession.session_id,
+      activeSentenceId,
+      10,
+      50,
+      10
+    );
+    setSolutions(result.solutions || []);
+  } catch (err) {
+    console.error('Failed to refresh solutions:', err);
+  } finally {
+    setIsLoadingSolutions(false);
+  }
+}, [
+  currentSession?.session_id,
+  activeSentenceId,
+  isLoadingSolutions,
+  getMiniMerlinSolutions
+]);
+const handleGetSuggestions = useCallback(async () => {
+  if (!currentSession?.session_id) {
+    setError('No active session');
+    return;
+  }
+
+  if (!activeSentenceId) {
+    setError('No sentence selected. Please select or add a sentence first.');
+    return;
+  }
+
+  if (isLoadingSuggestions) return;
+
+  try {
+    setIsLoadingSuggestions(true);
+    setError('');
+    
+    console.log(`🔍 Getting suggestions: minLength=${minWordLength}, maxResults=${maxSuggestions}, rawMode=${rawMode}`);
+    
+    // FIX #4 & #5: Pass updated params
+    const result = await getMiniMerlinSuggestions(
+      currentSession.session_id,
+      activeSentenceId,
+      minWordLength,
+      maxSuggestions,
+      rawMode  // FIX #5: Pass raw mode
+    );
+
+    setSuggestions(result.suggestions || []);
+    setHasFetchedSuggestions(true);
+    
+    if (result.suggestions?.length > 0) {
+      setSuccess(`Found ${result.suggestions.length.toLocaleString()} words for "${result.sentence_name}"`);
     }
-  };
+    
+  } catch (err) {
+    setError('Failed to get suggestions: ' + err.message);
+  } finally {
+    setIsLoadingSuggestions(false);
+  }
+}, [currentSession?.session_id, activeSentenceId, minWordLength, maxSuggestions, rawMode, getMiniMerlinSuggestions, isLoadingSuggestions]);
+
+
+
+const handleGetSolutions = useCallback(async () => {
+  if (!currentSession?.session_id) {
+    setError('No active session');
+    return;
+  }
+
+  if (!activeSentenceId) {
+    setError('No sentence selected. Please select or add a sentence first.');
+    return;
+  }
+
+  if (isLoadingSolutions) return;
+
+  try {
+    setIsLoadingSolutions(true);
+    setError('');
+    
+    const result = await getMiniMerlinSolutions(
+      currentSession.session_id,
+      activeSentenceId,
+      10,
+      50,
+      10
+    );
+    
+    setSolutions(result.solutions || []);
+    setHasFetchedSolutions(true);
+    
+    if (result.solutions?.length > 0) {
+      setSuccess(
+        `Found ${result.solutions.length} solutions for "${result.sentence_name}" ` +
+        `(${result.complete_count} complete, ${result.partial_count} partial)`
+      );
+    } else {
+      setError('No solutions found for this sentence');
+    }
+    
+  } catch (err) {
+    setError('Failed to get solutions: ' + err.message);
+  } finally {
+    setIsLoadingSolutions(false);
+  }
+}, [currentSession?.session_id, activeSentenceId, getMiniMerlinSolutions, isLoadingSolutions]);
+
+// Then replace the useEffect with this simpler version:
+useEffect(() => {
+  if (!activeSentenceId || !currentSession?.session_id) return;
+  if (!hasFetchedSuggestions && !hasFetchedSolutions) return;
+  
+  // Only refresh if scratch pad actually changed
+  if (previousScratchPadRef.current === scratchPad) return;
+  
+  const debounceTimer = setTimeout(() => {
+    if (hasFetchedSuggestions) {
+      refreshSuggestions();
+    }
+    
+    if (hasFetchedSolutions) {
+      refreshSolutions();
+    }
+    
+    // Update the ref
+    previousScratchPadRef.current = scratchPad;
+  }, 800);
+  
+  return () => clearTimeout(debounceTimer);
+}, [
+  scratchPad, 
+  activeSentenceId, 
+  currentSession?.session_id,
+  hasFetchedSuggestions, 
+  hasFetchedSolutions,
+  refreshSuggestions,
+  refreshSolutions
+]);
+
+const handleAddWordToScratchPad = async (word) => {
+  const newScratchPad = scratchPad ? `${scratchPad} ${word}` : word;
+  setScratchPad(newScratchPad);
+  
+  if (currentSession?.session_id && activeSentenceId) {
+    try {
+      await handleUpdateSentence(activeSentenceId, newScratchPad);
+      setSuccess(`Added "${word}"`);
+      
+      // ✅ IMMEDIATE REFRESH: Trigger refresh right after adding word
+      // Don't wait for debounce timer since this is a deliberate action
+      if (hasFetchedSuggestions) {
+        setTimeout(() => refreshSuggestions(), 200);
+      }
+      
+      if (hasFetchedSolutions) {
+        setTimeout(() => refreshSolutions(), 200);
+      }
+      
+    } catch (err) {
+      setError('Failed to add word: ' + err.message);
+    }
+  }
+};
 
   const handleCopy = async (text, index) => {
     try {
@@ -626,7 +792,29 @@ const handleScratchPadChange = (e) => {
   };
 
   const filteredSolutions = getFilteredSolutions();
+const suggestionsByLength = useMemo(() => {
+  if (!suggestions || suggestions.length === 0) return {};
+  
+  const grouped = suggestions.reduce((acc, sug) => {
+    const len = sug.length || sug.word?.length || 0;
+    if (!acc[len]) acc[len] = [];
+    acc[len].push(sug);
+    return acc;
+  }, {});
+  
+  // Sort within each length group alphabetically
+  Object.keys(grouped).forEach(len => {
+    grouped[len].sort((a, b) => (a.word || '').localeCompare(b.word || ''));
+  });
+  
+  return grouped;
+}, [suggestions]);
 
+const sortedLengths = useMemo(() => {
+  return Object.keys(suggestionsByLength)
+    .map(Number)
+    .sort((a, b) => b - a);  // Descending order (longest first)
+}, [suggestionsByLength]);
   // Calculate stats for active sentence
   const activeSentence = sentences.find(s => s.id === activeSentenceId);
   const poolSize = activeSentence?.pool_size || 0;
@@ -1036,6 +1224,43 @@ const handleScratchPadChange = (e) => {
     )}
   </div>
 )}
+
+              {activeView === 'workspace' && (
+                <div 
+                  className={`px-3 py-1.5 rounded-lg text-xs font-medium flex items-center gap-2 ${
+                    rawMode 
+                      ? 'bg-green-600/20 text-green-300 border border-green-500/30' 
+                      : 'bg-purple-600/20 text-purple-300 border border-purple-500/30'
+                  }`}
+                >
+                  {rawMode ? (
+                    <>
+                      <Database className="w-3 h-3" />
+                      Raw Mode
+                    </>
+                  ) : (
+                    <>
+                      <Sparkles className="w-3 h-3" />
+                      Smart Mode
+                    </>
+                  )}
+                </div>
+              )}
+
+              {/* Settings Button */}
+              {activeView === 'workspace' && (
+                <button
+                  onClick={() => setShowSettings(!showSettings)}
+                  className={`p-2 rounded-lg transition-colors ${
+                    showSettings
+                      ? 'bg-purple-600 text-white'
+                      : 'bg-white/10 text-purple-300 hover:bg-white/20'
+                  }`}
+                  title="Settings"
+                >
+                  <Settings className="w-5 h-5" />
+                </button>
+              )}
             </div>
           </div>
         </div>
@@ -1063,6 +1288,124 @@ const handleScratchPadChange = (e) => {
             </button>
           </div>
         )}
+        {showSettings && activeView === 'workspace' && (
+          <div className="mb-6 p-4 bg-white/10 backdrop-blur-sm rounded-lg border border-purple-500/30">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-semibold text-white flex items-center gap-2">
+                <Settings className="w-5 h-5 text-purple-400" />
+                Solver Settings
+              </h3>
+              <button
+                onClick={() => setShowSettings(false)}
+                className="text-purple-400 hover:text-purple-300"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+              {/* FIX #5: Raw Mode Toggle */}
+              <div className="p-3 bg-white/5 rounded-lg border border-purple-500/20">
+                <label className="block text-sm font-medium text-purple-300 mb-2">
+                  Scoring Mode
+                </label>
+                <button
+                  onClick={handleRawModeToggle}
+                  className={`w-full p-3 rounded-lg border transition-all flex items-center justify-between ${
+                    rawMode
+                      ? 'bg-green-600/20 border-green-500/30 text-green-300'
+                      : 'bg-purple-600/20 border-purple-500/30 text-purple-300'
+                  }`}
+                >
+                  <div className="flex items-center gap-2">
+                    {rawMode ? (
+                      <>
+                        <ToggleRight className="w-5 h-5" />
+                        <span>Raw Mode</span>
+                      </>
+                    ) : (
+                      <>
+                        <ToggleLeft className="w-5 h-5" />
+                        <span>Smart Mode</span>
+                      </>
+                    )}
+                  </div>
+                  <div className="text-xs opacity-70">
+                    {rawMode ? 'Like boulter.com' : 'Statistical bias'}
+                  </div>
+                </button>
+                <p className="text-xs text-purple-400 mt-2">
+                  {rawMode 
+                    ? 'Results sorted by length then alphabetically - no intelligence vocabulary bias'
+                    : 'Results prioritized by Elizabethan intelligence vocabulary scoring'
+                  }
+                </p>
+              </div>
+
+              {/* FIX #2: Min Word Length */}
+              <div className="p-3 bg-white/5 rounded-lg border border-purple-500/20">
+                <label className="block text-sm font-medium text-purple-300 mb-2">
+                  Min Word Length
+                </label>
+                <select
+                  value={minWordLength}
+                  onChange={(e) => setMinWordLength(Number(e.target.value))}
+                  className="w-full px-3 py-2 bg-white/10 border border-purple-500/30 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-purple-500"
+                >
+                  <option value={2}>2 letters (includes short words)</option>
+                  <option value={3}>3 letters</option>
+                  <option value={4}>4 letters (recommended)</option>
+                  <option value={5}>5 letters</option>
+                  <option value={6}>6 letters</option>
+                </select>
+                <p className="text-xs text-purple-400 mt-2">
+                  Filters out garbage words shorter than this
+                </p>
+              </div>
+
+              {/* FIX #4: Max Results */}
+              <div className="p-3 bg-white/5 rounded-lg border border-purple-500/20">
+                <label className="block text-sm font-medium text-purple-300 mb-2">
+                  Max Results
+                </label>
+                <select
+                  value={maxSuggestions}
+                  onChange={(e) => setMaxSuggestions(Number(e.target.value))}
+                  className="w-full px-3 py-2 bg-white/10 border border-purple-500/30 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-purple-500"
+                >
+                  <option value={100}>100 (fast)</option>
+                  <option value={500}>500</option>
+                  <option value={1000}>1,000</option>
+                  <option value={2000}>2,000</option>
+                  <option value={5000}>5,000 (recommended)</option>
+                  <option value={10000}>10,000 (comprehensive)</option>
+                </select>
+                <p className="text-xs text-purple-400 mt-2">
+                  More results = more comprehensive coverage
+                </p>
+              </div>
+
+              {/* Display Mode */}
+              <div className="p-3 bg-white/5 rounded-lg border border-purple-500/20">
+                <label className="block text-sm font-medium text-purple-300 mb-2">
+                  Display Mode
+                </label>
+                <select
+                  value={suggestionDisplayMode}
+                  onChange={(e) => setSuggestionDisplayMode(e.target.value)}
+                  className="w-full px-3 py-2 bg-white/10 border border-purple-500/30 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-purple-500"
+                >
+                  <option value="grouped">Grouped by Length (boulter-style)</option>
+                  <option value="flat">Flat Grid</option>
+                </select>
+                <p className="text-xs text-purple-400 mt-2">
+                  How to display word suggestions
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
+
 
         {/* ==================== SESSIONS VIEW ==================== */}
         {activeView === 'sessions' && (
@@ -1590,38 +1933,40 @@ const handleScratchPadChange = (e) => {
 </div>
 
               {/* Action Buttons */}
-              <div className="grid grid-cols-2 gap-3">
-                <button
-                  onClick={handleGetSuggestions}
-                  disabled={isLoadingSuggestions || !currentSession}
-                  className="px-4 py-3 bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-500 hover:to-cyan-500 disabled:from-gray-600 disabled:to-gray-600 text-white rounded-lg transition-all flex items-center justify-center gap-2 font-semibold shadow-lg disabled:opacity-50"
-                >
-                  {isLoadingSuggestions ? (
-                    <RefreshCw className="w-4 h-4 animate-spin" />
-                  ) : (
-                    <List className="w-4 h-4" />
-                  )}
-                  Word List
-                </button>
+<div className="grid grid-cols-2 gap-3">
+  <button
+    onClick={handleGetSuggestions}
+    disabled={isLoadingSuggestions || !currentSession || !activeSentenceId}
+    className="px-4 py-3 bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-500 hover:to-cyan-500 disabled:from-gray-600 disabled:to-gray-600 text-white rounded-lg transition-all flex items-center justify-center gap-2 font-semibold shadow-lg disabled:opacity-50"
+    title={!activeSentenceId ? "Select a sentence first" : "Get word suggestions"}
+  >
+    {isLoadingSuggestions ? (
+      <RefreshCw className="w-4 h-4 animate-spin" />
+    ) : (
+      <List className="w-4 h-4" />
+    )}
+    Word List
+  </button>
 
-                <button
-                  onClick={handleGetSolutions}
-                  disabled={isLoadingSolutions || !currentSession}
-                  className="px-4 py-3 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 disabled:from-gray-600 disabled:to-gray-600 text-white rounded-lg transition-all flex items-center justify-center gap-2 font-semibold shadow-lg disabled:opacity-50"
-                >
-                  {isLoadingSolutions ? (
-                    <>
-                      <RefreshCw className="w-4 h-4 animate-spin" />
-                      Searching...
-                    </>
-                  ) : (
-                    <>
-                      <Sparkles className="w-4 h-4" />
-                      Solutions
-                    </>
-                  )}
-                </button>
-              </div>
+  <button
+    onClick={handleGetSolutions}
+    disabled={isLoadingSolutions || !currentSession || !activeSentenceId}
+    className="px-4 py-3 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 disabled:from-gray-600 disabled:to-gray-600 text-white rounded-lg transition-all flex items-center justify-center gap-2 font-semibold shadow-lg disabled:opacity-50"
+    title={!activeSentenceId ? "Select a sentence first" : "Find multi-word solutions"}
+  >
+    {isLoadingSolutions ? (
+      <>
+        <RefreshCw className="w-4 h-4 animate-spin" />
+        Searching...
+      </>
+    ) : (
+      <>
+        <Sparkles className="w-4 h-4" />
+        Solutions
+      </>
+    )}
+  </button>
+</div>
 
               {/* Notes */}
               <div className="bg-white/10 backdrop-blur-sm rounded-lg border border-purple-500/30 p-4">
@@ -1679,24 +2024,71 @@ const handleScratchPadChange = (e) => {
             {/* ==================== RIGHT COLUMN - RESULTS ==================== */}
             <div className="lg:col-span-2 space-y-4">
               {/* Word Suggestions */}
-              <div className="bg-white/10 backdrop-blur-sm rounded-lg border border-purple-500/30 p-4">
-                <div className="flex items-center justify-between mb-3">
+                            <div className="bg-white/10 backdrop-blur-sm rounded-lg border border-purple-500/30 p-4">
+                <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
                   <h3 className="text-lg font-semibold text-white flex items-center gap-2">
                     <List className="w-5 h-5 text-purple-400" />
                     Word Suggestions
                     {suggestions.length > 0 && (
-                      <span className="text-sm text-purple-400">({suggestions.length})</span>
+                      <span className="text-sm text-purple-400">({suggestions.length.toLocaleString()})</span>
                     )}
                   </h3>
+                  
+                  {/* FIX #5: Mode indicator */}
+                  {suggestions.length > 0 && (
+                    <div className={`text-xs px-2 py-1 rounded ${
+                      rawMode 
+                        ? 'bg-green-600/20 text-green-300' 
+                        : 'bg-purple-600/20 text-purple-300'
+                    }`}>
+                      {rawMode ? 'Sorted by length' : 'Scored by relevance'}
+                    </div>
+                  )}
                 </div>
 
-                <div className="max-h-96 overflow-y-auto">
+                <div className="max-h-[500px] overflow-y-auto">
                   {suggestions.length === 0 ? (
                     <div className="text-center py-12 text-purple-400/50">
                       <List className="w-12 h-12 mx-auto mb-3 opacity-50" />
                       <p>Click "Word List" to get suggestions</p>
+                      <p className="text-xs mt-2">
+                        Settings: min {minWordLength} letters, max {maxSuggestions.toLocaleString()} results
+                      </p>
+                    </div>
+                  ) : suggestionDisplayMode === 'grouped' ? (
+                    /* FIX #4: Grouped by length display (like boulter.com) */
+                    <div className="space-y-4">
+                      {sortedLengths.map(length => (
+                        <div key={length} className="border-b border-purple-500/20 pb-4 last:border-b-0">
+                          <div className="flex items-center justify-between mb-2 sticky top-0 bg-white/5 py-1 px-2 rounded">
+                            <h4 className="text-sm font-semibold text-purple-300">
+                              {length} letters
+                            </h4>
+                            <span className="text-xs text-purple-400">
+                              {suggestionsByLength[length].length} words
+                            </span>
+                          </div>
+                          <div className="flex flex-wrap gap-1">
+                            {suggestionsByLength[length].map((suggestion, idx) => (
+                              <button
+                                key={idx}
+                                onClick={() => handleAddWordToScratchPad(suggestion.word)}
+                                className={`px-2 py-1 text-sm font-mono rounded border transition-all hover:scale-105 ${
+                                  suggestion.in_corpus
+                                    ? 'bg-green-600/20 border-green-500/30 text-green-200 hover:bg-green-600/30'
+                                    : 'bg-white/5 border-purple-500/20 text-white hover:bg-white/10'
+                                }`}
+                                title={`${suggestion.word} (${suggestion.length}L)${suggestion.in_corpus ? ' - In corpus' : ''}`}
+                              >
+                                {suggestion.word}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      ))}
                     </div>
                   ) : (
+                    /* Flat grid display */
                     <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                       {suggestions.map((suggestion, index) => (
                         <button
@@ -1713,9 +2105,9 @@ const handleScratchPadChange = (e) => {
                                 <span className="text-purple-400">
                                   {suggestion.length}L
                                 </span>
-                                <span className="text-green-400">
-                                  {suggestion.freq_score?.toFixed(0) || 0}
-                                </span>
+                                {suggestion.in_corpus && (
+                                  <span className="text-green-400">★</span>
+                                )}
                               </div>
                             </div>
                             <button
