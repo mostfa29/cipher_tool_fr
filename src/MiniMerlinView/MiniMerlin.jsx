@@ -1737,11 +1737,11 @@ const sortedLengths = useMemo(() => {
                   <label className="block text-sm font-semibold text-purple-300 mb-2 mt-4">
                     Current Pool (Remaining)
                   </label>
-                  <div className="p-3 bg-black/30 rounded-lg border border-green-500/20 font-mono text-xs text-green-300 break-all min-h-[60px]">
-                    {(() => {
+<div className="p-4 bg-black/30 rounded-lg border border-green-500/20 font-mono text-xl tracking-wide text-green-300 min-h-[60px] flex items-center flex-wrap">                    {(() => {
                       const originalPool = activeSentence.original_pool_str || '';
                       
-                      if (!originalPool) return 'No pool loaded';
+                      if (!originalPool) return <span className="text-sm opacity-50">No pool loaded</span>;
+
                       
                       const poolCounts = {};
                       for (const char of originalPool.toUpperCase()) {
@@ -1756,17 +1756,19 @@ const sortedLengths = useMemo(() => {
                         }
                       }
                       
-                      let remainingPool = '';
                       const sortedLetters = Object.keys(poolCounts).sort();
-                      
+                      const groups = [];
+
                       for (const letter of sortedLetters) {
                         const count = poolCounts[letter];
                         if (count > 0) {
-                          remainingPool += letter.repeat(count);
+                          groups.push(letter.repeat(count));
                         }
                       }
-                      
-                      return remainingPool || '(All letters used)';
+
+                      if (groups.length === 0) return <span className="text-sm opacity-50">(All letters used)</span>;
+
+                      return groups.join('\u2003');  // em-space between letter groups
                     })()}
                   </div>
                 </div>
